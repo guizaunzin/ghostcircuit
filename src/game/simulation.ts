@@ -6,7 +6,6 @@ import { copyDrone, createDrone, DRONE, NO_INPUT, speedOf, stepDrone, type Colli
 import { GhostRecorder, type Recording } from './ghost';
 import { createProgress, updateProgress, type GateCrossing, type RaceProgress } from './race';
 import { nearestIndex, tangentAt, trackSdf, type SdfResult, type Track } from './track';
-import { TRACK_KEY } from './storage';
 
 export const SIM_HZ = 120;
 export const DT = 1 / SIM_HZ;
@@ -142,7 +141,7 @@ export class Simulation {
   private finish(c: GateCrossing, p0x: number, p0z: number, t0: number): void {
     const d = this.drone;
     const f = (c.time - t0) / DT;
-    const recording = this.recorder.finish(TRACK_KEY, c.time, this.progress.splits, {
+    const recording = this.recorder.finish(this.track.key, c.time, this.progress.splits, {
       x: p0x + (d.x - p0x) * f,
       y: d.y,
       z: p0z + (d.z - p0z) * f,

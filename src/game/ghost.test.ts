@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { GhostRecorder, isValidRecording, sampleGhost, SAMPLE_HZ, STRIDE, type GhostPose, type Recording } from './ghost';
 import { createDrone } from './drone';
-import { buildTrack } from './track';
+import { getTrack } from './maps';
 import { Simulation, DT } from './simulation';
 import { Autopilot } from './autopilot';
-import { TRACK_KEY } from './storage';
 
-const track = buildTrack();
+const track = getTrack();
+const TRACK_KEY = track.key;
 
 function pose(): GhostPose {
   return { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };

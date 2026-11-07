@@ -3,23 +3,31 @@
 
 import * as THREE from 'three';
 import { tangentAt, trackSdf, type Corridor, type Gate, type Track } from '../game/track';
-import { PALETTE } from './environment';
+import type { Theme } from './themes';
+
+/** '#rrggbb' + alpha -> 'rgba(...)' for canvas drawing. */
+function rgba(hex: string, a: number): string {
+  const c = new THREE.Color(hex);
+  return `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${a})`;
+}
 
 const WALL_HEIGHT = 2.7;
 
-function surfaceTexture(kind: 'main' | 'shortcut'): THREE.Texture {
+function surfaceTexture(kind: 'main' | 'shortcut', theme: Theme): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 256;
   const g = c.getContext('2d')!;
-  g.fillStyle = kind === 'main' ? '#2a2342' : '#33263a';
+  const base = new THREE.Color(theme.surface);
+  if (kind === 'shortcut') base.lerp(new THREE.Color(theme.shortcut), 0.08);
+  g.fillStyle = '#' + base.getHexString();
   g.fillRect(0, 0, 128, 256);
   // Subtle cross bands for speed perception.
-  g.fillStyle = kind === 'main' ? 'rgba(255,255,255,0.045)' : 'rgba(255,179,71,0.07)';
+  g.fillStyle = kind === 'main' ? 'rgba(255,255,255,0.045)' : rgba(theme.shortcut, 0.07);
   g.fillRect(0, 0, 128, 64);
   g.fillRect(0, 128, 128, 64);
   // Edge lines.
-  g.fillStyle = kind === 'main' ? 'rgba(56,232,255,0.55)' : 'rgba(255,179,71,0.7)';
+  g.fillStyle = kind === 'main' ? rgba(theme.wall, 0.55) : rgba(theme.shortcut, 0.7);
   g.fillRect(3, 0, 3, 256);
   g.fillRect(122, 0, 3, 256);
   if (kind === 'main') {
@@ -28,7 +36,7 @@ function surfaceTexture(kind: 'main' | 'shortcut'): THREE.Texture {
     g.fillRect(62, 0, 4, 90);
   } else {
     // Hazard chevrons.
-    g.strokeStyle = 'rgba(255,179,71,0.35)';
+    g.strokeStyle = rgba(theme.shortcut, 0.35);
     g.lineWidth = 6;
     for (let y = 0; y < 256; y += 64) {
       g.beginPath();
@@ -46,7 +54,7 @@ function surfaceTexture(kind: 'main' | 'shortcut'): THREE.Texture {
   return t;
 }
 
-function corridorSurface(c: Corridor, y: number, kind: 'main' | 'shortcut'): THREE.Mesh {
+function corridorSurface(c: Corridor, y: number, kind: 'main' | 'shortcut', theme: Theme): THREE.Mesh {
   const pts = c.points;
   const n = pts.length;
   const count = c.closed ? n + 1 : n;
@@ -76,7 +84,7 @@ function corridorSurface(c: Corridor, y: number, kind: 'main' | 'shortcut'): THR
   // Make sure normals face up regardless of winding.
   const normals = geo.getAttribute('normal') as THREE.BufferAttribute;
   for (let i = 0; i < normals.count; i++) normals.setXYZ(i, 0, 1, 0);
-  const mat = new THREE.MeshLambertMaterial({ map: surfaceTexture(kind), side: THREE.DoubleSide });
+  const mat = new THREE.MeshLambertMaterial({ map: surfaceTexture(kind, theme), side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = kind === 'main' ? 1 : 2;
   return mesh;
@@ -90,14 +98,14 @@ interface WallPiece {
   color: THREE.Color;
 }
 
-function collectWalls(track: Track): WallPiece[] {
+function collectWalls(track: Track, theme: Theme): WallPiece[] {
   const out: WallPiece[] = [];
   const sdf = { d: 0, nx: 0, nz: 0 };
   for (const c of track.corridors) {
     const pts = c.points;
     const n = pts.length;
     const segs = c.closed ? n : n - 1;
-    const color = c.name === 'main' ? PALETTE.cyan : PALETTE.amber;
+    const color = new THREE.Color(c.name === 'main' ? theme.wall : theme.shortcut);
     for (const side of [1, -1]) {
       for (let i = 0; i < segs; i++) {
         const j = (i + 1) % n;
@@ -133,8 +141,8 @@ function collectWalls(track: Track): WallPiece[] {
   return out;
 }
 
-function createWalls(track: Track): THREE.Group {
-  const pieces = collectWalls(track);
+function createWalls(track: Track, theme: Theme): THREE.Group {
+  const pieces = collectWalls(track, theme);
   const group = new THREE.Group();
   const box = new THREE.BoxGeometry(1, 1, 1);
   const glass = new THREE.MeshBasicMaterial({
@@ -189,6 +197,7 @@ export interface GateVisual {
   portalMat: THREE.ShaderMaterial;
   labelMat: THREE.SpriteMaterial;
   state: GateVisualState;
+  colors: { next: THREE.Color; upcoming: THREE.Color; passed: THREE.Color };
 }
 
 function labelTexture(text: string, accent: string): THREE.Texture {
@@ -242,7 +251,7 @@ const portalFragment = /* glsl */ `
     gl_FragColor = vec4(color, a);
   }`;
 
-function createGate(g: Gate, isFinish: boolean, checker: THREE.Texture): GateVisual {
+function createGate(g: Gate, isFinish: boolean, checker: THREE.Texture, theme: Theme): GateVisual {
   const group = new THREE.Group();
   group.position.set(g.x, 0, g.z);
   group.rotation.y = Math.atan2(g.dirX, g.dirZ);
@@ -266,7 +275,7 @@ function createGate(g: Gate, isFinish: boolean, checker: THREE.Texture): GateVis
   group.add(beamStrip);
 
   const portalMat = new THREE.ShaderMaterial({
-    uniforms: { time: { value: 0 }, opacity: { value: 0 }, color: { value: new THREE.Color(PALETTE.magenta) } },
+    uniforms: { time: { value: 0 }, opacity: { value: 0 }, color: { value: new THREE.Color(theme.gateNext) } },
     vertexShader: portalVertex,
     fragmentShader: portalFragment,
     transparent: true,
@@ -280,7 +289,7 @@ function createGate(g: Gate, isFinish: boolean, checker: THREE.Texture): GateVis
   group.add(portal);
 
   const labelMat = new THREE.SpriteMaterial({
-    map: labelTexture(isFinish ? 'CHEGADA' : String(g.index + 1), isFinish ? '#ffffff' : '#ff3ea5'),
+    map: labelTexture(isFinish ? 'CHEGADA' : String(g.index + 1), isFinish ? '#ffffff' : theme.gateNext),
     transparent: true,
     depthWrite: false,
   });
@@ -302,23 +311,35 @@ function createGate(g: Gate, isFinish: boolean, checker: THREE.Texture): GateVis
     // Ground marker line.
     const line = new THREE.Mesh(
       new THREE.PlaneGeometry(g.halfWidth * 2, 0.6),
-      new THREE.MeshBasicMaterial({ color: PALETTE.magenta, transparent: true, opacity: 0.6, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: theme.gateNext, transparent: true, opacity: 0.6, depthWrite: false }),
     );
     line.rotation.x = -Math.PI / 2;
     line.position.y = 0.07;
     line.renderOrder = 3;
     group.add(line);
   }
-  return { gate: g, group, frameMat, portalMat, labelMat, state: 'idle' };
+  return {
+    gate: g,
+    group,
+    frameMat,
+    portalMat,
+    labelMat,
+    state: 'idle',
+    colors: {
+      next: new THREE.Color(theme.gateNext),
+      upcoming: new THREE.Color(theme.gateUpcoming),
+      passed: new THREE.Color(theme.gatePassed),
+    },
+  };
 }
 
-const NEXT_COLOR = new THREE.Color('#ff3ea5');
-const UPCOMING_COLOR = new THREE.Color('#7f8cff');
-const PASSED_COLOR = new THREE.Color('#3a3450');
 const FINISH_COLOR = new THREE.Color('#ffffff');
 
 export function setGateState(v: GateVisual, state: GateVisualState, time: number): void {
   const isFinish = v.gate.index === 4;
+  const NEXT_COLOR = v.colors.next;
+  const UPCOMING_COLOR = v.colors.upcoming;
+  const PASSED_COLOR = v.colors.passed;
   const pulse = 0.75 + 0.25 * Math.sin(time * 6);
   v.portalMat.uniforms.time.value = time;
   switch (state) {
@@ -360,12 +381,12 @@ export interface ObstacleVisual {
   faded: number;
 }
 
-function createObstacles(track: Track, out: ObstacleVisual[]): THREE.Group {
+function createObstacles(track: Track, out: ObstacleVisual[], theme: Theme): THREE.Group {
   const group = new THREE.Group();
   for (const o of track.obstacles) {
     // Own materials so each obstacle can fade when it blocks the camera.
-    const body = new THREE.MeshLambertMaterial({ color: 0x2a2140, flatShading: true, transparent: true });
-    const glow = new THREE.MeshBasicMaterial({ color: 0xff5a36, transparent: true });
+    const body = new THREE.MeshLambertMaterial({ color: theme.obstacle, flatShading: true, transparent: true });
+    const glow = new THREE.MeshBasicMaterial({ color: theme.hazard, transparent: true });
     out.push({ x: o.x, z: o.z, r: o.kind === 'pillar' ? o.r : Math.hypot(o.hx, o.hz), materials: [body, glow], faded: 1 });
     if (o.kind === 'pillar') {
       const m = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 1.1, o.h, 8), body);
@@ -400,15 +421,15 @@ export interface TrackVisuals {
   obstacles: ObstacleVisual[];
 }
 
-export function createTrackVisuals(track: Track): TrackVisuals {
+export function createTrackVisuals(track: Track, theme: Theme): TrackVisuals {
   const group = new THREE.Group();
-  group.add(corridorSurface(track.main, 0.02, 'main'));
-  group.add(corridorSurface(track.shortcut, 0.04, 'shortcut'));
-  group.add(createWalls(track));
+  group.add(corridorSurface(track.main, 0.02, 'main', theme));
+  group.add(corridorSurface(track.shortcut, 0.04, 'shortcut', theme));
+  group.add(createWalls(track, theme));
   const obstacles: ObstacleVisual[] = [];
-  group.add(createObstacles(track, obstacles));
+  group.add(createObstacles(track, obstacles, theme));
   const checker = checkerTexture();
-  const gates = track.gates.map((g) => createGate(g, g.index === 4, checker));
+  const gates = track.gates.map((g) => createGate(g, g.index === 4, checker, theme));
   gates.forEach((g) => group.add(g.group));
   return { group, gates, obstacles };
 }

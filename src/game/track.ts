@@ -1,12 +1,59 @@
 // Track definition: corridors (playable area as a union of variable-width
 // tubes around polylines), gates (checkpoints + start/finish) and obstacles.
 // Pure data + queries, no rendering. Units are meters, plane XZ.
+//
+// Tracks are described by a TrackDef (pure data, see maps.ts). Checkpoints
+// and obstacles are placed by distance along the track and lateral offset,
+// so they always stay where intended when the layout changes.
 
 import { catmull1, clamp, closestOnSegment, type ClosestPoint, type Vec2 } from './math';
 
-export const TRACK_ID = 'arena-crepusculo';
-/** Bump whenever the layout changes: invalidates stored ghosts. */
-export const TRACK_VERSION = 1;
+export type ThemeId = 'crepusculo' | 'noturno' | 'aurora' | 'duna' | 'tempestade';
+
+/** [x, z, halfWidth] */
+export type ControlPoint = [number, number, number];
+
+export type ObstacleDef =
+  | {
+      kind: 'pillar';
+      on: 'main' | 'shortcut';
+      /** Distance along the corridor (main: measured from the finish line). */
+      s: number;
+      /** Lateral offset from the centerline in meters (+ = left). */
+      offset: number;
+      r: number;
+      h: number;
+    }
+  | {
+      kind: 'box';
+      on: 'main' | 'shortcut';
+      s: number;
+      offset: number;
+      /** Half size across the track. */
+      wide: number;
+      /** Half size along the track. */
+      long: number;
+      /** Extra rotation relative to the track direction. */
+      rot?: number;
+      h: number;
+    };
+
+export interface TrackDef {
+  id: string;
+  name: string;
+  /** Bump whenever the layout changes: invalidates stored ghosts. */
+  version: number;
+  /** Seed used by the generator (null = hand-made). */
+  seed: number | null;
+  theme: ThemeId;
+  main: ControlPoint[];
+  shortcut: ControlPoint[];
+  /** Position of the finish line: distance along the main control loop. */
+  finish: number;
+  /** Checkpoint distances measured from the finish line, increasing. */
+  checkpoints: [number, number, number, number];
+  obstacles: ObstacleDef[];
+}
 
 export interface CenterPoint {
   x: number;
@@ -50,7 +97,13 @@ export type Obstacle =
 
 export interface Track {
   id: string;
+  name: string;
   version: number;
+  seed: number | null;
+  theme: ThemeId;
+  /** `${id}@${version}`: identifies comparable recordings. */
+  key: string;
+  /** Main loop; index 0 is the finish line. */
   main: Corridor;
   shortcut: Corridor;
   corridors: Corridor[];
@@ -61,66 +114,10 @@ export interface Track {
   shortcutRange: [number, number];
 }
 
-// ---------------------------------------------------------------------------
-// Layout. Clockwise when looking down (x right, z up on the map).
-// [x, z, halfWidth]
-const MAIN_CONTROL: [number, number, number][] = [
-  [0, -120, 10.5], // start / finish straight (boost)
-  [0, -50, 10.5],
-  [0, 20, 10.5],
-  [1, 90, 10.5],
-  [10, 142, 10], // wide right sweeper
-  [44, 182, 10],
-  [100, 192, 10],
-  [150, 170, 10],
-  [168, 118, 9.5],
-  [160, 74, 8.5], // technical chicane
-  [128, 46, 7.5],
-  [106, 16, 7.5],
-  [114, -14, 7.5],
-  [148, -36, 7.5],
-  [158, -68, 8.5],
-  [138, -108, 9.5], // long drop into the bottom U
-  [96, -144, 10],
-  [52, -163, 10.5],
-  [16, -154, 10.5],
-];
-
-// Shortcut: cuts the inside of the sweeper. Narrow, sharp entry, pillars.
-const SHORTCUT_CONTROL: [number, number, number][] = [
-  [-3, 118, 3.8],
-  [12, 124, 3.8],
-  [44, 136, 3.8],
-  [84, 145, 3.8],
-  [120, 141, 3.8],
-  [148, 128, 3.8],
-  [165, 104, 3.8],
-];
-
-const OBSTACLES: Obstacle[] = [
-  // Pillar splitting the boost straight: pick a side.
-  { kind: 'pillar', x: 0, z: 30, r: 1.7, h: 14 },
-  // Shortcut hazards (staggered).
-    { kind: 'pillar', x: 70, z: 143.2, r: 1.2, h: 10 },
-  { kind: 'pillar', x: 122, z: 138, r: 1.2, h: 10 },
-  // Chicane block on the inside line.
-  { kind: 'box', x: 104, z: 12, hx: 2, hz: 3.5, rot: 0.2, h: 4 },
-  // Bottom U: apex pillars.
-  { kind: 'pillar', x: 104, z: -128, r: 1.6, h: 12 },
-  { kind: 'pillar', x: 60, z: -150, r: 1.6, h: 12 },
-  // Sweeper outside blocks (punish running wide).
-  { kind: 'box', x: 72, z: 196, hx: 3, hz: 1.6, rot: -0.1, h: 3 },
-];
-
-const CHECKPOINTS: { at: Vec2; label: string }[] = [
-  { at: { x: 0, z: 62 }, label: 'CP 1' },
-  { at: { x: 166, z: 92 }, label: 'CP 2' },
-  { at: { x: 154, z: -84 }, label: 'CP 3' },
-  { at: { x: 40, z: -162 }, label: 'CP 4' },
-];
-const FINISH_AT: Vec2 = { x: 0, z: -96 };
+export const SAMPLE_SPACING = 1.5;
 const START_BEHIND = 9; // meters behind the start/finish line
 
+// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
 function sampleCenter(control: [number, number, number][], closed: boolean, spacing: number): CenterPoint[] {
@@ -217,8 +214,38 @@ export function tangentAt(c: Corridor, i: number): Vec2 {
   return { x: dx / l, z: dz / l };
 }
 
-function makeGate(main: Corridor, index: number, label: string, at: Vec2): Gate {
-  const ci = nearestIndex(main, at.x, at.z);
+/** Samples a control polyline into an evenly spaced corridor. */
+export function buildCorridor(name: string, control: ControlPoint[], closed: boolean): Corridor {
+  return makeCorridor(name, sampleCenter(control, closed, SAMPLE_SPACING), closed);
+}
+
+/** Rotates a closed corridor so that the point nearest to distance s becomes index 0. */
+function rotateClosed(c: Corridor, s: number): Corridor {
+  const i0 = indexAtDistance(c, s);
+  const pts = c.points.slice(i0).concat(c.points.slice(0, i0));
+  return makeCorridor(c.name, pts, true);
+}
+
+/** Index of the centerline point closest to a distance along the corridor. */
+export function indexAtDistance(c: Corridor, s: number): number {
+  const L = c.length;
+  const n = c.points.length;
+  const t = c.closed ? ((s % L) + L) % L : clamp(s, 0, L);
+  if (c.closed && t > c.dist[n - 1]) {
+    // Between the last point and the wrap-around to 0.
+    return t - c.dist[n - 1] < L - t ? n - 1 : 0;
+  }
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (c.dist[mid] <= t) lo = mid;
+    else hi = mid;
+  }
+  return t - c.dist[lo] < c.dist[hi] - t ? lo : hi;
+}
+
+function makeGate(main: Corridor, index: number, label: string, ci: number): Gate {
   const p = main.points[ci];
   const t = tangentAt(main, ci);
   // Left normal (perpendicular in XZ).
@@ -241,18 +268,24 @@ function makeGate(main: Corridor, index: number, label: string, at: Vec2): Gate 
   };
 }
 
-let cached: Track | null = null;
-
-export function getTrack(): Track {
-  if (!cached) cached = buildTrack();
-  return cached;
+function placeObstacle(o: ObstacleDef, main: Corridor, shortcut: Corridor): Obstacle {
+  const c = o.on === 'main' ? main : shortcut;
+  const i = indexAtDistance(c, o.s);
+  const p = c.points[i];
+  const t = tangentAt(c, i);
+  const x = p.x + -t.z * o.offset;
+  const z = p.z + t.x * o.offset;
+  if (o.kind === 'pillar') return { kind: 'pillar', x, z, r: o.r, h: o.h };
+  // Box local x = across, local z = along the track.
+  return { kind: 'box', x, z, hx: o.wide, hz: o.long, rot: Math.atan2(t.x, t.z) + (o.rot ?? 0), h: o.h };
 }
 
-export function buildTrack(): Track {
-  const main = makeCorridor('main', sampleCenter(MAIN_CONTROL, true, 1.5), true);
-  const shortcut = makeCorridor('shortcut', sampleCenter(SHORTCUT_CONTROL, false, 1.5), false);
-  const gates = CHECKPOINTS.map((c, i) => makeGate(main, i, c.label, c.at));
-  gates.push(makeGate(main, 4, 'Chegada', FINISH_AT));
+export function buildTrack(def: TrackDef): Track {
+  const main = rotateClosed(buildCorridor('main', def.main, true), def.finish);
+  const shortcut = buildCorridor('shortcut', def.shortcut, false);
+  const labels = ['CP 1', 'CP 2', 'CP 3', 'CP 4'];
+  const gates = def.checkpoints.map((s, i) => makeGate(main, i, labels[i], indexAtDistance(main, s)));
+  gates.push(makeGate(main, 4, 'Chegada', 0));
   const fin = gates[4];
   const start = {
     x: fin.x - fin.dirX * START_BEHIND,
@@ -262,13 +295,17 @@ export function buildTrack(): Track {
   const s0 = shortcut.points[0];
   const s1 = shortcut.points[shortcut.points.length - 1];
   return {
-    id: TRACK_ID,
-    version: TRACK_VERSION,
+    id: def.id,
+    name: def.name,
+    version: def.version,
+    seed: def.seed,
+    theme: def.theme,
+    key: `${def.id}@${def.version}`,
     main,
     shortcut,
     corridors: [main, shortcut],
     gates,
-    obstacles: OBSTACLES,
+    obstacles: def.obstacles.map((o) => placeObstacle(o, main, shortcut)),
     start,
     shortcutRange: [nearestIndex(main, s0.x, s0.z), nearestIndex(main, s1.x, s1.z)],
   };

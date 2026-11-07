@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyFinishedRun, PREFS_KEY, RUNS_KEY, SaveStore, selectGhost, TRACK_KEY, type StorageLike } from './storage';
+import { applyFinishedRun, LEGACY_RUNS_KEY, PREFS_KEY, runsKey, SaveStore, selectGhost, type StorageLike } from './storage';
+
+const TRACK_KEY = 'arena-crepusculo@2';
+const RUNS_KEY = runsKey(TRACK_KEY);
 import type { Recording } from './ghost';
 
 class MemoryStorage implements StorageLike {
@@ -63,22 +66,22 @@ describe('SaveStore', () => {
     const store = new SaveStore(mem);
     const best = run(40, 1);
     const last = run(45, 2);
-    expect(store.saveRuns({ last, best })).toBe(true);
-    expect(store.savePrefs({ ghost: 'best', muted: true })).toBe(true);
+    expect(store.saveRuns(TRACK_KEY, { last, best })).toBe(true);
+    expect(store.savePrefs({ ghost: 'best', muted: true, track: null })).toBe(true);
     const again = new SaveStore(mem);
-    const loaded = again.loadRuns();
+    const loaded = again.loadRuns(TRACK_KEY);
     expect(loaded.best!.time).toBe(40);
     expect(loaded.last!.time).toBe(45);
-    expect(again.loadPrefs()).toEqual({ ghost: 'best', muted: true });
+    expect(again.loadPrefs()).toEqual({ ghost: 'best', muted: true, track: null });
   });
 
   it('stores a shared last/best run only once', () => {
     const mem = new MemoryStorage();
     const store = new SaveStore(mem);
     const r = run(40, 1);
-    store.saveRuns({ last: r, best: r });
+    store.saveRuns(TRACK_KEY, { last: r, best: r });
     expect(JSON.parse(mem.getItem(RUNS_KEY)!).best).toBe('last');
-    const loaded = store.loadRuns();
+    const loaded = store.loadRuns(TRACK_KEY);
     expect(loaded.best!.time).toBe(40);
     expect(loaded.last).toBe(loaded.best);
   });
@@ -88,20 +91,20 @@ describe('SaveStore', () => {
     mem.setItem(RUNS_KEY, '{not json');
     mem.setItem(PREFS_KEY, '[]oops');
     const store = new SaveStore(mem);
-    expect(store.loadRuns()).toEqual({ last: null, best: null });
-    expect(store.loadPrefs()).toEqual({ ghost: 'last', muted: false });
+    expect(store.loadRuns(TRACK_KEY)).toEqual({ last: null, best: null });
+    expect(store.loadPrefs()).toEqual({ ghost: 'last', muted: false, track: null });
     mem.setItem(RUNS_KEY, JSON.stringify({ format: 1, track: TRACK_KEY, last: { bogus: true }, best: run(40, 1) }));
-    const loaded = store.loadRuns();
+    const loaded = store.loadRuns(TRACK_KEY);
     expect(loaded.last).toBeNull();
     expect(loaded.best!.time).toBe(40);
   });
 
   it('discards ghosts from another track version but keeps prefs', () => {
     const mem = new MemoryStorage();
-    mem.setItem(RUNS_KEY, JSON.stringify({ format: 1, track: 'arena-crepusculo@0', last: run(40), best: 'last' }));
+    mem.setItem(RUNS_KEY, JSON.stringify({ format: 1, track: 'arena-crepusculo@1', last: run(40), best: 'last' }));
     mem.setItem(PREFS_KEY, JSON.stringify({ ghost: 'best', muted: false }));
     const store = new SaveStore(mem);
-    expect(store.loadRuns()).toEqual({ last: null, best: null });
+    expect(store.loadRuns(TRACK_KEY)).toEqual({ last: null, best: null });
     expect(mem.getItem(RUNS_KEY)).toBeNull();
     expect(store.loadPrefs().ghost).toBe('best');
   });
@@ -109,8 +112,8 @@ describe('SaveStore', () => {
   it('works without storage and never throws', () => {
     const store = new SaveStore(null);
     expect(store.available).toBe(false);
-    expect(store.saveRuns({ last: run(40), best: run(40) })).toBe(false);
-    expect(store.loadRuns()).toEqual({ last: null, best: null });
+    expect(store.saveRuns(TRACK_KEY, { last: run(40), best: run(40) })).toBe(false);
+    expect(store.loadRuns(TRACK_KEY)).toEqual({ last: null, best: null });
     const throwing: StorageLike = {
       getItem() {
         throw new Error('SecurityError');
@@ -123,10 +126,10 @@ describe('SaveStore', () => {
       },
     };
     const s2 = new SaveStore(throwing);
-    expect(s2.loadRuns()).toEqual({ last: null, best: null });
-    expect(s2.loadPrefs()).toEqual({ ghost: 'last', muted: false });
-    expect(s2.saveRuns({ last: run(40), best: run(40) })).toBe(false);
-    expect(s2.savePrefs({ ghost: 'best', muted: true })).toBe(false);
+    expect(s2.loadRuns(TRACK_KEY)).toEqual({ last: null, best: null });
+    expect(s2.loadPrefs()).toEqual({ ghost: 'last', muted: false, track: null });
+    expect(s2.saveRuns(TRACK_KEY, { last: run(40), best: run(40) })).toBe(false);
+    expect(s2.savePrefs({ ghost: 'best', muted: true, track: null })).toBe(false);
   });
 
   it('falls back to saving only the best run when quota is tight', () => {
@@ -135,8 +138,29 @@ describe('SaveStore', () => {
     const best = run(40, 1);
     const last = run(45, 2);
     mem.quota = JSON.stringify({ format: 1, track: TRACK_KEY, last: best, best: 'last' }).length + 5;
-    expect(store.saveRuns({ last, best })).toBe(true);
-    const loaded = store.loadRuns();
+    expect(store.saveRuns(TRACK_KEY, { last, best })).toBe(true);
+    const loaded = store.loadRuns(TRACK_KEY);
     expect(loaded.best!.time).toBe(40);
+  });
+
+  it('keeps runs separate per map and remembers the selected map', () => {
+    const mem = new MemoryStorage();
+    const store = new SaveStore(mem);
+    store.saveRuns(TRACK_KEY, { last: run(40, 1), best: run(40, 1) });
+    const other = 'neon-noturno@1';
+    expect(store.loadRuns(other)).toEqual({ last: null, best: null });
+    const r: Recording = { ...run(33, 5), track: other };
+    store.saveRuns(other, { last: r, best: r });
+    expect(store.loadRuns(other).best!.time).toBe(33);
+    expect(store.loadRuns(TRACK_KEY).best!.time).toBe(40);
+    store.savePrefs({ ghost: 'last', muted: false, track: 'neon-noturno' });
+    expect(new SaveStore(mem).loadPrefs().track).toBe('neon-noturno');
+  });
+
+  it('removes the obsolete single-map key from v1', () => {
+    const mem = new MemoryStorage();
+    mem.setItem(LEGACY_RUNS_KEY, '{"format":1,"track":"arena-crepusculo@1"}');
+    new SaveStore(mem);
+    expect(mem.getItem(LEGACY_RUNS_KEY)).toBeNull();
   });
 });

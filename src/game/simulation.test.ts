@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildTrack, trackSdf } from './track';
+import { trackSdf } from './track';
+import { getTrack } from './maps';
 import { COUNTDOWN_TIME, DT, Simulation, type SimEvent } from './simulation';
 import { Autopilot, type AutopilotOptions } from './autopilot';
 import { DRONE, NO_INPUT, type DroneInput } from './drone';
 import type { Recording } from './ghost';
 
-const track = buildTrack();
+const track = getTrack();
 
 function runLap(opts: AutopilotOptions, ghost: Recording | null = null) {
   const sim = new Simulation(track);
