@@ -66,7 +66,8 @@ export function updateProgress(
   const gate = track.gates[progress.next];
   const f = gateCrossFraction(gate, p0x, p0z, p1x, p1z);
   if (f < 0) return;
-  const time = t0 + dt * f;
+  // Millisecond precision: identical to what is stored with the ghost.
+  const time = Math.round((t0 + dt * f) * 1000) / 1000;
   const crossing: GateCrossing = { gate, time, x: p0x + (p1x - p0x) * f, z: p0z + (p1z - p0z) * f };
   if (progress.next < CHECKPOINT_COUNT) {
     progress.splits.push(time);

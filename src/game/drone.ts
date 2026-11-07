@@ -228,7 +228,8 @@ export function stepDrone(d: DroneState, input: DroneInput, dt: number, track: T
   const newVf = d.vx * nfx + d.vz * nfz;
   const longAccel = (newVf - prevVf) / dt;
   const targetPitch = clamp(longAccel * 0.012, -0.32, 0.32) + clamp(newVf / DRONE.boostMaxSpeed, -0.2, 1) * 0.12;
-  const targetRoll = clamp(d.yawRate * Math.min(1, sp / 12) * 0.32, -0.55, 0.55);
+  // Bank into the turn (turning right = negative yawRate = positive roll).
+  const targetRoll = clamp(-d.yawRate * Math.min(1, sp / 12) * 0.32, -0.55, 0.55);
   d.pitch += (targetPitch - d.pitch) * damp(6, dt);
   d.roll += (targetRoll - d.roll) * damp(7, dt);
 
@@ -256,5 +257,15 @@ function resolveVelocity(d: DroneState, nx: number, nz: number): number {
   const keep = 1 - DRONE.wallFriction * headOn - Math.min(0.04, impact * 0.008);
   d.vx *= keep;
   d.vz *= keep;
+  // Head-on hits deflect sideways so the drone never gets pinned.
+  if (headOn > 0.8 && impact > 1) {
+    const tx = -nz;
+    const tz = nx;
+    const vt = d.vx * tx + d.vz * tz;
+    const side = vt !== 0 ? Math.sign(vt) : 1;
+    const kick = impact * 0.3;
+    d.vx += tx * side * kick;
+    d.vz += tz * side * kick;
+  }
   return impact;
 }
