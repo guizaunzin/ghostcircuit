@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { GameEngine } from '../engine/engine';
 import { formatDelta, formatTime } from '../engine/format';
 import type { FinishResult, UiState } from '../engine/store';
+import { MAPS } from '../game/maps';
+import { MapPicker } from './MapPicker';
 
 function GhostSelector({ ui, engine }: { ui: UiState; engine: GameEngine }) {
   if (!ui.hasRuns) {
@@ -52,10 +54,7 @@ export function Menu({ ui, engine }: { ui: UiState; engine: GameEngine }) {
           GHOST<span>CIRCUIT</span>
         </h1>
         <p className="tagline">Corra contra o seu próprio fantasma.</p>
-        <div className="record">
-          <span>Recorde</span>
-          <strong>{ui.bestTime !== null ? formatTime(ui.bestTime) : '—'}</strong>
-        </div>
+        <MapPicker ui={ui} engine={engine} />
         <GhostSelector ui={ui} engine={engine} />
         <button ref={play} className="btn-primary" onClick={() => engine.play()}>
           Jogar
@@ -126,6 +125,7 @@ export function FinishScreen({ ui, result, engine }: { ui: UiState; result: Fini
         <h2 className={result.isNewBest ? 'record-title' : ''}>
           {result.isNewBest ? (result.previousBest === null ? 'Primeiro fantasma criado!' : 'Novo recorde!') : 'Chegada!'}
         </h2>
+        <div className="final-map">{MAPS.find((m) => m.id === ui.trackId)?.name}</div>
         <div className="final-time">{formatTime(result.time)}</div>
         <dl className="stats">
           <div>
@@ -157,7 +157,7 @@ export function FinishScreen({ ui, result, engine }: { ui: UiState; result: Fini
         <GhostSelector ui={ui} engine={engine} />
         <div className="row">
           <button className="btn-ghost" onClick={() => engine.toMenu()}>
-            Menu
+            Trocar pista / Menu
           </button>
         </div>
         <p className="muted small-print">{ui.touch ? '' : 'Enter ou R para tentar de novo'}</p>

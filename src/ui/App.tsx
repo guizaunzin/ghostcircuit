@@ -23,6 +23,8 @@ const EMPTY_STORE = new Store({
   phase: 'menu',
   resumePhase: null,
   result: null,
+  trackId: '',
+  trackBests: {},
   bestTime: null,
   lastTime: null,
   ghostChoice: 'last',

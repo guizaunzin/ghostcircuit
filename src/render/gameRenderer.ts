@@ -6,7 +6,8 @@ import { clamp, damp, lerpAngle } from '../game/math';
 import { sampleGhost, type GhostPose, type Recording } from '../game/ghost';
 import type { Track } from '../game/track';
 import { createGhostDrone, createPlayerDrone, getGlowTexture, type DroneModel } from './droneMesh';
-import { createGround, createLights, createScenery, createSky, PALETTE } from './environment';
+import { createGround, createLights, createScenery, createSky, PALETTE, sunDirection, trackBounds } from './environment';
+import { getTheme } from './themes';
 import { createTrackVisuals, setGateState, type TrackVisuals } from './trackMesh';
 
 export interface Quality {
@@ -58,7 +59,10 @@ export class GameRenderer {
   readonly camera: THREE.PerspectiveCamera;
   private player: DroneModel;
   private ghost: DroneModel;
-  private visuals: TrackVisuals;
+  private visuals: TrackVisuals | null = null;
+  /** Everything that depends on the current track (rebuilt on track change). */
+  private world: THREE.Group | null = null;
+  private loadedTrack: Track | null = null;
   private shadow: THREE.Mesh;
   private ghostShadow: THREE.Mesh;
   private trail: THREE.Line;
@@ -75,7 +79,7 @@ export class GameRenderer {
   private aspect = 1;
   quality: Quality;
 
-  constructor(canvas: HTMLCanvasElement, track: Track, quality: Quality) {
+  constructor(canvas: HTMLCanvasElement, quality: Quality) {
     this.quality = quality;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -84,14 +88,7 @@ export class GameRenderer {
       stencil: false,
     });
     this.renderer.setPixelRatio(quality.pixelRatio);
-    this.renderer.setClearColor(PALETTE.fog);
     this.camera = new THREE.PerspectiveCamera(68, 1, 0.3, 2400);
-
-    this.scene.fog = new THREE.Fog(PALETTE.fog, 160, 900);
-    this.scene.add(createSky(), createGround(), ...createLights());
-    this.scene.add(createScenery(track, quality.detail));
-    this.visuals = createTrackVisuals(track);
-    this.scene.add(this.visuals.group);
 
     this.player = createPlayerDrone();
     this.ghost = createGhostDrone();
@@ -112,7 +109,7 @@ export class GameRenderer {
     this.shadow.renderOrder = 4;
     this.scene.add(this.shadow);
     const gShadowMat = new THREE.MeshBasicMaterial({
-      color: PALETTE.cyan,
+      color: PALETTE.ghost,
       alphaMap: getGlowTexture(),
       transparent: true,
       opacity: 0.25,
@@ -140,7 +137,29 @@ export class GameRenderer {
 
     this.particles = new Particles(quality.particles);
     this.scene.add(this.particles.points);
+  }
 
+  /** Builds the world for a track (sky, scenery, track meshes), replacing the previous one. */
+  loadTrack(track: Track): void {
+    if (this.loadedTrack === track) return;
+    if (this.world) {
+      this.scene.remove(this.world);
+      disposeTree(this.world);
+    }
+    const theme = getTheme(track.theme);
+    const sun = sunDirection(track, theme);
+    const { cx, cz } = trackBounds(track);
+    const fog = new THREE.Color(theme.fog);
+    this.renderer.setClearColor(fog);
+    this.scene.fog = new THREE.Fog(fog, theme.fogNear, theme.fogFar);
+    const world = new THREE.Group();
+    world.add(createSky(theme, sun), createGround(theme, cx, cz), ...createLights(theme, sun));
+    world.add(createScenery(track, this.quality.detail, theme));
+    this.visuals = createTrackVisuals(track, theme);
+    world.add(this.visuals.group);
+    this.scene.add(world);
+    this.world = world;
+    this.loadedTrack = track;
     this.snapCamera(track.start.x, track.start.z, track.start.yaw);
   }
 
@@ -215,7 +234,7 @@ export class GameRenderer {
     }
 
     // --- Gates ---
-    for (const gv of this.visuals.gates) {
+    for (const gv of this.visuals?.gates ?? []) {
       const i = gv.gate.index;
       let state: 'next' | 'upcoming' | 'passed' | 'idle';
       if (f.mode === 'menu') state = 'idle';
@@ -295,7 +314,7 @@ export class GameRenderer {
     const dx = d.x - cx;
     const dz = d.z - cz;
     const len2 = dx * dx + dz * dz || 1;
-    for (const o of this.visuals.obstacles) {
+    for (const o of this.visuals?.obstacles ?? []) {
       const t = clamp(((o.x - cx) * dx + (o.z - cz) * dz) / len2, 0, 1);
       const px = cx + dx * t - o.x;
       const pz = cz + dz * t - o.z;
@@ -308,7 +327,7 @@ export class GameRenderer {
 
   private updateTrail(rec: Recording, t: number, fade: number): void {
     const p = this.tmpPose;
-    const col = PALETTE.cyan;
+    const col = PALETTE.ghost;
     for (let i = 0; i < TRAIL_POINTS; i++) {
       const k = i / (TRAIL_POINTS - 1); // 0 = oldest
       const tt = Math.max(0, t - TRAIL_SECONDS * (1 - k));
@@ -344,11 +363,30 @@ export class GameRenderer {
   dispose(): void {
     this.player.dispose();
     this.ghost.dispose();
+    if (this.world) disposeTree(this.world);
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.geometry) m.geometry.dispose();
     });
     this.renderer.dispose();
+  }
+}
+
+/** Frees GPU resources of a subtree (geometries, materials, textures). */
+function disposeTree(root: THREE.Object3D): void {
+  const materials = new Set<THREE.Material>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.geometry) m.geometry.dispose();
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mat)) mat.forEach((x) => materials.add(x));
+    else if (mat) materials.add(mat);
+  });
+  for (const mat of materials) {
+    for (const v of Object.values(mat)) if (v instanceof THREE.Texture) v.dispose();
+    const u = (mat as THREE.ShaderMaterial).uniforms;
+    if (u) for (const k of Object.keys(u)) if (u[k].value instanceof THREE.Texture) u[k].value.dispose();
+    mat.dispose();
   }
 }
 

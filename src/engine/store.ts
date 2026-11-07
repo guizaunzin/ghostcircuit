@@ -24,6 +24,10 @@ export interface UiState {
   /** Phase to return to when resuming from pause. */
   resumePhase: Phase | null;
   result: FinishResult | null;
+  /** Selected map. */
+  trackId: string;
+  /** Personal best per map id (for the map picker). */
+  trackBests: Record<string, number | null>;
   bestTime: number | null;
   lastTime: number | null;
   ghostChoice: GhostChoice;

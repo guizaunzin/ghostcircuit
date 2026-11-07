@@ -89,12 +89,14 @@ const state = (page) =>
       runsLast: runs.last ? runs.last.time : null,
       runsBest: runs.best ? runs.best.time : null,
       speed: Math.hypot(e.sim.drone.vx, e.sim.drone.vz),
+      trackId: s.trackId,
+      trackBests: s.trackBests,
     };
   });
 
-const stored = (page) =>
-  page.evaluate(() => {
-    const raw = localStorage.getItem('ghostcircuit:runs');
+const stored = (page, mapId = 'arena-crepusculo') =>
+  page.evaluate((mapId) => {
+    const raw = localStorage.getItem('ghostcircuit:runs:' + mapId);
     if (!raw) return null;
     const d = JSON.parse(raw);
     return {
@@ -103,7 +105,7 @@ const stored = (page) =>
       bestIsLast: d.best === 'last',
       prefs: JSON.parse(localStorage.getItem('ghostcircuit:prefs') || 'null'),
     };
-  });
+  }, mapId);
 
 async function waitPhase(page, phase, timeout = 120000) {
   await page.waitForFunction((p) => window.__ghostCircuit && window.__ghostCircuit.state.phase === p, phase, {
@@ -128,7 +130,8 @@ try {
   await page.goto(`${base}/?test&speed=${SPEED}`);
   await page.waitForFunction(() => !!window.__ghostCircuit, null, { timeout: 20000 });
   check(await page.getByRole('button', { name: 'Jogar' }).isVisible(), 'tela inicial com botão "Jogar"');
-  check((await page.textContent('.record strong')).includes('—'), 'sem recorde na primeira visita');
+  check((await page.textContent('.map-best')).includes('—'), 'sem recorde na primeira visita');
+  check((await state(page)).trackId === 'arena-crepusculo', 'pista padrão selecionada');
   await page.screenshot({ path: `${SHOTS}/01-menu.png` });
   await page.getByRole('button', { name: 'Jogar' }).click();
   let s = await state(page);
@@ -195,7 +198,7 @@ try {
   s = await state(page);
   check(s.bestTime === secondTime && s.lastTime === thirdTime, 'recorde e última corrida recuperados');
   check(s.ghostChoice === 'best', 'escolha "Meu recorde" recuperada');
-  check((await page.textContent('.record strong')).trim().length > 3, `recorde exibido no menu (${await page.textContent('.record strong')})`);
+  check(/\d:\d\d\.\d\d/.test(await page.textContent('.map-best')), `recorde exibido no menu (${await page.textContent('.map-best')})`);
   await page.screenshot({ path: `${SHOTS}/05-menu-after-reload.png` });
 
   console.log('6. Abandonar uma tentativa sem perder gravações válidas');
@@ -222,8 +225,34 @@ try {
   s = await state(page);
   check(s.bestTime === secondTime && s.lastTime === thirdTime, 'gravações intactas após recarregar');
 
+  console.log('7. Outras pistas (seeds) com recordes separados');
+  await page.getByRole('button', { name: 'Próxima pista' }).click();
+  s = await state(page);
+  check(s.trackId !== 'arena-crepusculo' && s.bestTime === null && s.phase === 'menu', `troca de pista no menu (${s.trackId})`);
+  const otherId = s.trackId;
+  await page.screenshot({ path: `${SHOTS}/07-menu-other-map.png` });
+  await page.getByRole('button', { name: 'Jogar' }).click();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${SHOTS}/07b-other-map-countdown.png` });
+  s = await race(page, { aggression: 0.8, useBoost: true, useShortcut: true });
+  check(s.result && s.result.isNewBest && s.splits.length === 4, `volta completa em ${otherId} pelo atalho (${s.result?.time.toFixed(2)}s)`);
+  const otherBest = s.result.time;
+  st = await stored(page, otherId);
+  check(st && st.best === otherBest, 'gravação salva na chave da outra pista');
+  await page.screenshot({ path: `${SHOTS}/07c-other-map-finish.png` });
+  await page.getByRole('button', { name: /Trocar pista/ }).click();
+  await page.getByRole('button', { name: 'Pista anterior' }).click();
+  s = await state(page);
+  check(s.trackId === 'arena-crepusculo' && s.bestTime === secondTime, 'pista original mantém o próprio recorde');
+  check(s.trackBests[otherId] === otherBest, 'recorde da outra pista exibido no seletor');
+  await page.getByRole('button', { name: 'Próxima pista' }).click();
+  await page.reload();
+  await page.waitForFunction(() => !!window.__ghostCircuit, null, { timeout: 20000 });
+  s = await state(page);
+  check(s.trackId === otherId && s.bestTime === otherBest, 'pista escolhida e recorde lembrados após recarregar');
+
   // Corrupted storage must not break the game.
-  await page.evaluate(() => localStorage.setItem('ghostcircuit:runs', '{"format":1,"track":"x"'));
+  await page.evaluate((id) => localStorage.setItem('ghostcircuit:runs:' + id, '{"format":1,"track":"x"'), otherId);
   await page.reload();
   await page.waitForFunction(() => !!window.__ghostCircuit, null, { timeout: 20000 });
   s = await state(page);
@@ -231,7 +260,7 @@ try {
   await ctx.close();
 
   // ------------------------------------------------------------------- mobile
-  console.log('7. Celular (viewport touch)');
+  console.log('8. Celular (viewport touch)');
   const mctx = await browser.newContext({ ...devices['Pixel 7'] });
   const m = await mctx.newPage();
   watch(m, 'mobile');

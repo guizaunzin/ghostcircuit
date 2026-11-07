@@ -10,7 +10,9 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node e2e/run.mjs"
+    "test:e2e": "node e2e/run.mjs",
+    "gen:map": "tsx scripts/gen-map.ts",
+    "gen:maps": "tsx scripts/gen-map.ts bake"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -24,6 +26,7 @@
     "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^6.0.0",
     "playwright": "1.63.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3",
     "vite": "^8.0.0",
     "vitest": "^5.1.0"

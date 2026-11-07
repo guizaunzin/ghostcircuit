@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildTrack, type Gate } from './track';
+import { type Gate } from './track';
+import { getTrack } from './maps';
 import { createProgress, gateCrossFraction, updateProgress, type GateCrossing } from './race';
 import { Simulation } from './simulation';
 import { NO_INPUT } from './drone';
 
-const track = buildTrack();
+const track = getTrack();
 
 /** Points just before/after a gate along its direction. */
 function around(g: Gate, before: number, after: number, lateral = 0) {

@@ -758,6 +758,20 @@ kbd {
   background: rgba(255, 179, 71, 0.35);
 }
 
+@media (max-height: 640px) {
+  .panel {
+    gap: 10px;
+    padding-top: 16px;
+  }
+  .howto .muted,
+  .tagline {
+    display: none;
+  }
+  .title {
+    font-size: 36px;
+  }
+}
+
 @media (max-height: 420px) {
   .t-throttle {
     width: 88px;
@@ -778,6 +792,94 @@ kbd {
   .hud-hint {
     top: 74px;
   }
+}
+
+/* ------------------------------------------------------------- Map picker */
+
+.map-picker {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  gap: 6px;
+}
+.map-arrow {
+  height: 64px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 28px;
+  line-height: 1;
+}
+.map-arrow:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+.map-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid color-mix(in srgb, var(--map-accent) 55%, transparent);
+  text-align: left;
+  min-width: 0;
+}
+.map-shape {
+  width: 74px;
+  height: 74px;
+  flex: none;
+}
+.map-main {
+  fill: none;
+  stroke: var(--map-accent);
+  stroke-width: 14;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+.map-shortcut {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 7;
+  stroke-dasharray: 10 8;
+}
+.map-start {
+  fill: #fff;
+}
+.map-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  position: relative;
+  flex: 1;
+}
+.map-info strong {
+  font-size: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.map-best {
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.map-count {
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.final-map {
+  margin-top: -8px;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 /* ------------------------------------------------------------ Fatal error */

@@ -7,7 +7,8 @@ import type { Recording } from '../game/ghost';
 import { clamp, lerp, lerpAngle } from '../game/math';
 import { DT, Simulation, type SimEvent } from '../game/simulation';
 import { applyFinishedRun, getBrowserStorage, SaveStore, selectGhost, type GhostChoice, type Runs } from '../game/storage';
-import { getTrack, type Track } from '../game/track';
+import { DEFAULT_MAP_ID, getTrack, hasMap, MAPS } from '../game/maps';
+import type { Track } from '../game/track';
 import { GameRenderer, type DronePose, type Quality, type ScreenPoint } from '../render/gameRenderer';
 import { AudioEngine } from './audio';
 import { formatDelta, formatTime } from './format';
@@ -54,7 +55,7 @@ export function detectQuality(): { quality: Quality; mobile: boolean; touch: boo
 
 export class GameEngine {
   readonly store: Store;
-  readonly sim: Simulation;
+  sim: Simulation;
   readonly input = new InputManager();
   readonly audio = new AudioEngine();
   private renderer: GameRenderer;
@@ -93,10 +94,6 @@ export class GameEngine {
   constructor(canvas: HTMLCanvasElement, hud: HudRefs, opts: { testMode?: boolean; timeScale?: number } = {}) {
     this.canvas = canvas;
     this.hud = hud;
-    this.track = getTrack();
-    this.sim = new Simulation(this.track);
-    this.prev = createDrone(0, 0, 0);
-    copyDrone(this.sim.drone, this.prev);
     if (opts.testMode) {
       this.maxStepsPerFrame = 480;
       this.timeScale = clamp(opts.timeScale ?? 1, 0.1, 8);
@@ -104,18 +101,26 @@ export class GameEngine {
 
     const storage = getBrowserStorage();
     this.save = new SaveStore(storage);
-    this.runs = this.save.loadRuns();
     const prefs = this.save.loadPrefs();
     this.audio.setMuted(prefs.muted);
 
+    this.track = getTrack(prefs.track && hasMap(prefs.track) ? prefs.track : DEFAULT_MAP_ID);
+    this.sim = new Simulation(this.track);
+    this.prev = createDrone(0, 0, 0);
+    copyDrone(this.sim.drone, this.prev);
+    this.runs = this.save.loadRuns(this.track.key);
+
     const { quality, touch, maxPixelRatio } = detectQuality();
     this.maxPixelRatio = maxPixelRatio;
-    this.renderer = new GameRenderer(canvas, this.track, quality);
+    this.renderer = new GameRenderer(canvas, quality);
+    this.renderer.loadTrack(this.track);
 
     this.store = new Store({
       phase: 'menu',
       resumePhase: null,
       result: null,
+      trackId: this.track.id,
+      trackBests: this.loadAllBests(),
       bestTime: this.runs.best?.time ?? null,
       lastTime: this.runs.last?.time ?? null,
       ghostChoice: prefs.ghost,
@@ -240,14 +245,52 @@ export class GameEngine {
 
   setGhostChoice(c: GhostChoice): void {
     this.store.set({ ghostChoice: c });
-    this.save.savePrefs({ ghost: c, muted: this.store.get().muted });
+    this.savePrefs();
   }
 
   toggleMute(): void {
     const muted = !this.store.get().muted;
     this.audio.setMuted(muted);
     this.store.set({ muted });
-    this.save.savePrefs({ ghost: this.store.get().ghostChoice, muted });
+    this.savePrefs();
+  }
+
+  private savePrefs(): void {
+    const s = this.store.get();
+    this.save.savePrefs({ ghost: s.ghostChoice, muted: s.muted, track: s.trackId });
+  }
+
+  /** Switches map (from the menu). Loads that map's records and ghosts. */
+  selectTrack(id: string): void {
+    const phase = this.store.get().phase;
+    if ((phase !== 'menu' && phase !== 'finished') || !hasMap(id) || id === this.track.id) return;
+    this.track = getTrack(id);
+    this.sim = new Simulation(this.track);
+    copyDrone(this.sim.drone, this.prev);
+    this.prevRaceTime = 0;
+    this.acc = 0;
+    this.runs = this.save.loadRuns(this.track.key);
+    this.renderer.loadTrack(this.track);
+    this.hud.root.dataset.visible = 'false';
+    this.store.set({
+      phase: 'menu',
+      result: null,
+      trackId: id,
+      bestTime: this.runs.best?.time ?? null,
+      lastTime: this.runs.last?.time ?? null,
+      hasRuns: !!this.runs.last,
+      activeGhost: null,
+    });
+    this.savePrefs();
+  }
+
+  private loadAllBests(): Record<string, number | null> {
+    const out: Record<string, number | null> = {};
+    for (const m of MAPS) {
+      const t = getTrackKeyOnly(m.id, m.version);
+      out[m.id] = m.id === this.track.id ? (this.runs.best?.time ?? null) : (this.save.loadRuns(t).best?.time ?? null);
+    }
+    return out;
   }
 
   setTouchMode(touch: boolean): void {
@@ -405,7 +448,7 @@ export class GameEngine {
       const r = applyFinishedRun(this.runs, recording);
       this.runs = r.runs;
       isNewBest = r.isNewBest;
-      persisted = this.save.saveRuns(this.runs);
+      persisted = this.save.saveRuns(this.track.key, this.runs);
     }
     this.finishedFor = 0;
     this.audio.finish(isNewBest);
@@ -415,6 +458,7 @@ export class GameEngine {
       bestTime: this.runs.best?.time ?? null,
       lastTime: this.runs.last?.time ?? null,
       hasRuns: !!this.runs.last,
+      trackBests: { ...s.trackBests, [this.track.id]: this.runs.best?.time ?? null },
       result: {
         time,
         bestTime: this.runs.best?.time ?? null,
@@ -585,4 +629,8 @@ export class GameEngine {
   get pixelRatio(): number {
     return this.renderer.quality.pixelRatio;
   }
+}
+
+function getTrackKeyOnly(id: string, version: number): string {
+  return `${id}@${version}`;
 }
