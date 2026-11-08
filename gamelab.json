@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "projectId": "fantasma",
+  "repository": "guizaunzin/ghostcircuit",
+  "updatedAt": "2026-11-08T19:30:00Z",
+  "summary": "Corrida de drones em 3D no navegador contra o próprio fantasma. Cinco pistas (Arena Crepúsculo, feita à mão, e quatro geradas por seed com temas próprios), quatro checkpoints em ordem, boost recarregável e um atalho estreito por pista. Cada corrida completa vira um fantasma para a próxima tentativa. Tudo roda no cliente (React, TypeScript, Vite e Three.js), sem backend; recordes e fantasmas ficam no localStorage, separados por pista.",
+  "nextTask": "Jogar uma volta completa em cada uma das cinco pistas num celular físico e num computador com GPU real, avaliando a sensação dos controles e o desempenho. Até agora os testes automatizados só rodaram em Chromium com renderização por software.",
+  "features": [
+    {
+      "id": "checkpoints",
+      "text": "Quatro checkpoints obrigatórios, em ordem, com cruzamento direcional (pular, passar ao contrário ou parar dentro do portal não conta) e chegada.",
+      "status": "validated",
+      "evidence": "src/game/race.test.ts passou em 08/11/2026 (npm test: 62/62)."
+    },
+    {
+      "id": "ghost",
+      "text": "Gravação do fantasma a 20 Hz e reprodução interpolada; antes de cada tentativa dá para escolher entre a última corrida e o recorde, com diferença de tempo em cada checkpoint.",
+      "status": "validated",
+      "evidence": "src/game/ghost.test.ts e src/game/simulation.test.ts passaram em 08/11/2026 (npm test: 62/62)."
+    },
+    {
+      "id": "tracks",
+      "text": "Cinco pistas com temas visuais próprios, cada uma com reta para o boost, curvas variadas e um atalho estreito entre dois checkpoints.",
+      "status": "validated",
+      "evidence": "src/game/maps.test.ts valida todas as pistas (obstáculos com espaço para passar, portais impossíveis de contornar, atalho mais curto, volta completa do piloto automático) e passou em 08/11/2026."
+    },
+    {
+      "id": "generator",
+      "text": "Gerador procedural de pistas por seed, com o resultado gravado como dados para que todo navegador monte a mesma pista (npm run gen:map / gen:maps).",
+      "status": "validated",
+      "evidence": "src/game/maps.test.ts confere que as pistas geradas são idênticas ao que a seed produz; passou em 08/11/2026."
+    },
+    {
+      "id": "storage",
+      "text": "Recorde e fantasmas salvos por pista no localStorage, com versão de formato; dados corrompidos ou de outra versão da pista são descartados, e sem localStorage o jogo avisa e continua.",
+      "status": "validated",
+      "evidence": "src/game/storage.test.ts passou em 08/11/2026 (npm test: 62/62)."
+    },
+    {
+      "id": "touch-controls",
+      "text": "Controles touch com joystick virtual e botões de acelerar, frear e boost, aceitando toques simultâneos; teclado no desktop.",
+      "status": "implemented",
+      "evidence": "Coberto pelo teste ponta a ponta em e2e/run.mjs (viewport de celular), que não foi executado nesta verificação."
+    },
+    {
+      "id": "renderer",
+      "text": "Cena Three.js com temas por pista, partículas, câmera de perseguição e resolução adaptativa ao FPS.",
+      "status": "implemented",
+      "evidence": ""
+    },
+    {
+      "id": "audio",
+      "text": "Sons de motor, checkpoint, chegada e colisão sintetizados com Web Audio, com botão de silenciar.",
+      "status": "implemented",
+      "evidence": ""
+    },
+    {
+      "id": "focus-pause",
+      "text": "Pausa automática ao trocar de aba ou janela, soltando todos os controles.",
+      "status": "implemented",
+      "evidence": "Coberto pelo teste ponta a ponta em e2e/run.mjs, que não foi executado nesta verificação."
+    }
+  ],
+  "decisions": [
+    {
+      "id": "fixed-timestep",
+      "date": "2026-11-07T08:34:03Z",
+      "text": "Simulação em timestep fixo de 120 Hz, com interpolação na renderização. O React só re-renderiza em transições de fase; o HUD é atualizado direto no DOM."
+    },
+    {
+      "id": "tube-collision",
+      "date": "2026-11-07T08:34:03Z",
+      "text": "Área jogável como união de tubos ao redor de polilinhas. A colisão remove só a componente da velocidade contra a parede, então o drone desliza e nunca prende; se sair da área, volta ao último ponto seguro."
+    },
+    {
+      "id": "tracks-as-data",
+      "date": "2026-11-07T12:41:44Z",
+      "text": "Checkpoints e obstáculos são posicionados pela distância ao longo da pista e pelo deslocamento lateral, não por coordenadas absolutas, para continuarem no lugar certo quando o traçado muda."
+    },
+    {
+      "id": "storage-per-track",
+      "date": "2026-11-07T12:41:44Z",
+      "text": "Uma chave de localStorage por pista, com pista@versão. Mudar o traçado exige subir a versão da pista, o que descarta os fantasmas antigos dela."
+    }
+  ],
+  "bugs": [
+    {
+      "id": "pillars-in-walls",
+      "date": "2026-11-07T12:41:44Z",
+      "text": "Corrigido: pilares dentro das paredes na Arena Crepúsculo (U inferior antes do CP4 e um pilar do atalho). A pista passou para a v2, o que descartou recordes antigos dela."
+    },
+    {
+      "id": "long-runs-not-recorded",
+      "date": "2026-11-07T12:41:44Z",
+      "text": "Limitação conhecida: corridas acima de 5 minutos contam o tempo, mas não são gravadas como fantasma."
+    },
+    {
+      "id": "real-device-performance",
+      "date": "2026-11-07T12:41:44Z",
+      "text": "Limitação conhecida: o desempenho em GPUs reais e celulares físicos ainda não foi medido."
+    }
+  ],
+  "tests": [
+    {
+      "id": "unit-2026-11-08",
+      "date": "2026-11-08T19:00:00Z",
+      "text": "npm test (Vitest): 5 arquivos, 62 testes passando — corrida, fantasma, simulação, armazenamento e validação de todas as pistas."
+    }
+  ],
+  "changelog": [
+    {
+      "id": "pr-2",
+      "date": "2026-11-07T13:06:17Z",
+      "text": "PR #2: gerador de pistas por seed, quatro novas pistas com temas (Neon Noturno, Duna Solar, Aurora Glacial e Vale da Tempestade), seletor de pista no menu, recordes por pista e correção de obstáculos mal posicionados."
+    },
+    {
+      "id": "pr-1",
+      "date": "2026-11-07T09:02:35Z",
+      "text": "PR #1: primeira versão jogável — núcleo da simulação, renderizador 3D, interface em português, controles touch, áudio sintetizado e teste ponta a ponta."
+    }
+  ]
+}
