@@ -2,18 +2,29 @@
 // audio, HUD (direct DOM writes, no per-frame React), persistence and phases.
 
 import { copyDrone, createDrone, DRONE, forwardSpeed, speedOf, type DroneInput, type DroneState } from '../game/drone';
+import { AiDriver, type Difficulty } from '../game/ai';
 import { Autopilot, type AutopilotOptions } from '../game/autopilot';
 import type { Recording } from '../game/ghost';
 import { clamp, lerp, lerpAngle } from '../game/math';
-import { DT, Simulation, type SimEvent } from '../game/simulation';
-import { applyFinishedRun, getBrowserStorage, SaveStore, selectGhost, type GhostChoice, type Runs } from '../game/storage';
+import { DT, Simulation, type GameMode, type SimEvent } from '../game/simulation';
+import {
+  applyFinishedRun,
+  applyRaceResult,
+  getBrowserStorage,
+  raceRecordKey,
+  SaveStore,
+  selectGhost,
+  type GhostChoice,
+  type RaceRecords,
+  type Runs,
+} from '../game/storage';
 import { DEFAULT_MAP_ID, getTrack, hasMap, MAPS } from '../game/maps';
 import type { Track } from '../game/track';
 import { GameRenderer, type DronePose, type Quality, type ScreenPoint } from '../render/gameRenderer';
 import { AudioEngine } from './audio';
 import { formatDelta, formatTime } from './format';
 import { InputManager } from './input';
-import { Store, type Phase, type UiState } from './store';
+import { Store, type Phase, type Standing, type UiState } from './store';
 
 export interface HudRefs {
   root: HTMLElement;
@@ -23,6 +34,7 @@ export interface HudRefs {
   boostFill: HTMLElement;
   boostBar: HTMLElement;
   ghostDelta: HTMLElement;
+  position: HTMLElement;
   flash: HTMLElement;
   countdown: HTMLElement;
   message: HTMLElement;
@@ -32,6 +44,8 @@ export interface HudRefs {
 }
 
 const GHOST_LABEL: Record<GhostChoice, string> = { last: 'Última corrida', best: 'Meu recorde' };
+/** AI rivals in race mode. */
+export const RACE_OPPONENTS = 3;
 
 export function detectQuality(): { quality: Quality; mobile: boolean; touch: boolean; maxPixelRatio: number } {
   const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -62,7 +76,12 @@ export class GameEngine {
   private track: Track;
   private save: SaveStore;
   private runs: Runs;
+  private raceRecords: RaceRecords = {};
   private prev: DroneState;
+  /** Previous-step states of the AI rivals (render interpolation). */
+  private prevRivals: DroneState[] = [];
+  private rivalPoses: { pose: DronePose; faded: boolean }[] = [];
+  private lastPositionFlash = -10;
   private prevRaceTime = 0;
   private acc = 0;
   private lastFrame = 0;
@@ -70,7 +89,7 @@ export class GameEngine {
   private running = false;
   private stepInput: DroneInput = { throttle: 0, brake: 0, steer: 0, boost: false };
   private hud: HudRefs;
-  private hudCache = { time: '', cp: '', speed: '', boost: -1, ghost: '' };
+  private hudCache = { time: '', cp: '', speed: '', boost: -1, ghost: '', position: '' };
   private flashTimer = 0;
   private messageTimer = 0;
   private countdownTimer = 0;
@@ -109,6 +128,7 @@ export class GameEngine {
     this.prev = createDrone(0, 0, 0);
     copyDrone(this.sim.drone, this.prev);
     this.runs = this.save.loadRuns(this.track.key);
+    this.raceRecords = this.save.loadRaceRecords(this.track.key);
 
     const { quality, touch, maxPixelRatio } = detectQuality();
     this.maxPixelRatio = maxPixelRatio;
@@ -120,6 +140,10 @@ export class GameEngine {
       resumePhase: null,
       result: null,
       trackId: this.track.id,
+      mode: prefs.mode,
+      difficulty: prefs.difficulty,
+      laps: prefs.laps,
+      raceRecords: this.raceRecords,
       trackBests: this.loadAllBests(),
       bestTime: this.runs.best?.time ?? null,
       lastTime: this.runs.last?.time ?? null,
@@ -130,6 +154,8 @@ export class GameEngine {
       storageOk: this.save.available,
       touch,
     });
+
+    this.resetPreview();
 
     this.input.onAction = (a) => {
       const phase = this.store.get().phase;
@@ -200,21 +226,45 @@ export class GameEngine {
   }
 
   restart(): void {
-    const choice = this.store.get().ghostChoice;
-    const ghost: Recording | null = selectGhost(this.runs, choice);
-    this.sim.reset(ghost);
-    copyDrone(this.sim.drone, this.prev);
+    const s = this.store.get();
+    let ghost: Recording | null = null;
+    if (s.mode === 'race') {
+      this.sim.reset(null, { difficulty: s.difficulty, laps: s.laps, opponents: RACE_OPPONENTS });
+    } else {
+      ghost = selectGhost(this.runs, s.ghostChoice);
+      this.sim.reset(ghost);
+    }
+    this.syncRacers();
     this.prevRaceTime = 0;
     this.acc = 0;
     this.renderer.snapCamera(this.sim.drone.x, this.sim.drone.z, this.sim.drone.yaw);
     this.lastGhostDelta = null;
-    this.resetHud(!ghost);
+    this.resetHud(s.mode === 'ghost' && !ghost);
     this.store.set({
       phase: 'countdown',
       resumePhase: null,
       result: null,
-      activeGhost: ghost ? choice : null,
+      activeGhost: ghost ? s.ghostChoice : null,
     });
+  }
+
+  /** Puts the simulation in the pre-race state of the selected mode (menu backdrop). */
+  private resetPreview(): void {
+    const s = this.store.get();
+    if (s.mode === 'race') this.sim.reset(null, { difficulty: s.difficulty, laps: s.laps, opponents: RACE_OPPONENTS });
+    else this.sim.reset(null);
+    this.syncRacers();
+    this.prevRaceTime = 0;
+    this.acc = 0;
+  }
+
+  /** Rebuilds interpolation state and rival models after a reset. */
+  private syncRacers(): void {
+    copyDrone(this.sim.drone, this.prev);
+    const rivals = this.sim.racers.filter((r) => !r.isPlayer);
+    this.prevRivals = rivals.map((r) => copyDrone(r.drone, createDrone(0, 0, 0)));
+    this.rivalPoses = rivals.map(() => ({ pose: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 }, faded: false }));
+    this.renderer.setRivals(rivals.map((r) => ({ name: r.name, color: r.color })));
   }
 
   pause(): void {
@@ -237,10 +287,29 @@ export class GameEngine {
   toMenu(): void {
     this.input.clear();
     this.audio.suspend();
-    this.sim.reset(null);
-    copyDrone(this.sim.drone, this.prev);
+    this.resetPreview();
     this.hud.root.dataset.visible = 'false';
     this.store.set({ phase: 'menu', resumePhase: null, result: null });
+  }
+
+  /** Ghost (time trial) or race against AI. Only from the menu. */
+  setMode(mode: GameMode): void {
+    if (this.store.get().phase !== 'menu') return;
+    this.store.set({ mode });
+    this.resetPreview();
+    this.savePrefs();
+  }
+
+  setDifficulty(difficulty: Difficulty): void {
+    this.store.set({ difficulty });
+    if (this.store.get().phase === 'menu') this.resetPreview();
+    this.savePrefs();
+  }
+
+  setLaps(laps: number): void {
+    this.store.set({ laps: clamp(Math.round(laps), 1, 3) });
+    if (this.store.get().phase === 'menu') this.resetPreview();
+    this.savePrefs();
   }
 
   setGhostChoice(c: GhostChoice): void {
@@ -257,7 +326,14 @@ export class GameEngine {
 
   private savePrefs(): void {
     const s = this.store.get();
-    this.save.savePrefs({ ghost: s.ghostChoice, muted: s.muted, track: s.trackId });
+    this.save.savePrefs({
+      ghost: s.ghostChoice,
+      muted: s.muted,
+      track: s.trackId,
+      mode: s.mode,
+      difficulty: s.difficulty,
+      laps: s.laps,
+    });
   }
 
   /** Switches map (from the menu). Loads that map's records and ghosts. */
@@ -266,11 +342,10 @@ export class GameEngine {
     if ((phase !== 'menu' && phase !== 'finished') || !hasMap(id) || id === this.track.id) return;
     this.track = getTrack(id);
     this.sim = new Simulation(this.track);
-    copyDrone(this.sim.drone, this.prev);
-    this.prevRaceTime = 0;
-    this.acc = 0;
     this.runs = this.save.loadRuns(this.track.key);
+    this.raceRecords = this.save.loadRaceRecords(this.track.key);
     this.renderer.loadTrack(this.track);
+    this.resetPreview();
     this.hud.root.dataset.visible = 'false';
     this.store.set({
       phase: 'menu',
@@ -280,6 +355,7 @@ export class GameEngine {
       lastTime: this.runs.last?.time ?? null,
       hasRuns: !!this.runs.last,
       activeGhost: null,
+      raceRecords: this.raceRecords,
     });
     this.savePrefs();
   }
@@ -305,9 +381,32 @@ export class GameEngine {
       this.input.override = null;
       return;
     }
+    // In race mode the test pilot also dodges rivals (same driver as the AI).
     const ap = new Autopilot(this.track, opts);
+    const ai = new AiDriver(
+      this.track,
+      {
+        label: 'teste',
+        aggression: opts.aggression,
+        speedCap: opts.useBoost ? DRONE.boostMaxSpeed : DRONE.maxSpeed,
+        shortcutChance: opts.useShortcut ? 1 : 0,
+        wobble: 0,
+        spread: 0,
+      },
+      9,
+      1,
+    );
+    ai.resync(this.sim.drone);
+    let lap = this.sim.progress.lap;
     this.input.override = (out) => {
-      if (this.sim.phase === 'racing') ap.drive(this.sim.drone, out);
+      if (this.sim.phase === 'racing' && this.sim.mode === 'race') {
+        if (this.sim.progress.lap !== lap) {
+          lap = this.sim.progress.lap;
+          ai.chooseRoute();
+        }
+        const views = this.sim.racers.map((r) => ({ drone: r.drone, active: r.progress.finishTime === null }));
+        ai.drive(this.sim.drone, views, DT, out);
+      } else if (this.sim.phase === 'racing') ap.drive(this.sim.drone, out);
       else {
         out.throttle = 0;
         out.brake = 0;
@@ -319,6 +418,10 @@ export class GameEngine {
 
   getRuns(): Runs {
     return this.runs;
+  }
+
+  getRaceRecords(): RaceRecords {
+    return this.raceRecords;
   }
 
   // ---------------------------------------------------------------------
@@ -339,6 +442,7 @@ export class GameEngine {
       let steps = 0;
       while (this.acc >= DT && steps < this.maxStepsPerFrame) {
         copyDrone(this.sim.drone, this.prev);
+        for (let k = 0; k < this.prevRivals.length; k++) copyDrone(this.sim.racers[k + 1].drone, this.prevRivals[k]);
         this.prevRaceTime = this.sim.raceTime;
         this.input.read(this.stepInput, DT);
         this.sim.step(this.stepInput);
@@ -362,11 +466,27 @@ export class GameEngine {
     pose.roll = lerp(p.roll, d.roll, alpha);
     if (phase === 'menu') pose.y = DRONE.hoverHeight + Math.sin(this.wallTime * 2.1) * 0.08;
 
+    for (let k = 0; k < this.rivalPoses.length; k++) {
+      const r = this.sim.racers[k + 1];
+      const a = this.prevRivals[k];
+      const b = r.drone;
+      const rp = this.rivalPoses[k].pose;
+      rp.x = lerp(a.x, b.x, alpha);
+      rp.y = phase === 'menu' ? DRONE.hoverHeight + Math.sin(this.wallTime * 2.1 + k) * 0.08 : lerp(a.y, b.y, alpha);
+      rp.z = lerp(a.z, b.z, alpha);
+      rp.yaw = lerpAngle(a.yaw, b.yaw, alpha);
+      rp.pitch = lerp(a.pitch, b.pitch, alpha);
+      rp.roll = lerp(a.roll, b.roll, alpha);
+      this.rivalPoses[k].faded = r.progress.finishTime !== null;
+    }
+
     const raceTime = lerp(this.prevRaceTime, this.sim.raceTime, alpha);
     const speed = speedOf(d);
     this.renderer.render({
       mode: phase === 'menu' ? 'menu' : 'race',
       drone: pose,
+      playerFaded: this.sim.mode === 'race' && this.sim.phase === 'finished',
+      rivals: this.rivalPoses,
       speed,
       boosting: d.boosting,
       hitFlash: d.hitFlash,
@@ -409,8 +529,25 @@ export class GameEngine {
         case 'checkpoint':
           this.onCheckpoint(e.index, e.delta);
           break;
+        case 'lap': {
+          const laps = this.sim.progress.laps;
+          this.audio.checkpoint(true);
+          this.flash(e.lap + 1 === laps ? 'Última volta!' : `Volta ${e.lap + 1}/${laps}`, 'neutral');
+          break;
+        }
+        case 'position':
+          if (this.wallTime - this.lastPositionFlash > 0.6 && this.flashTimer < 1.2) {
+            this.lastPositionFlash = this.wallTime;
+            const up = e.position < e.previous;
+            this.flash(`${up ? '▲' : '▼'} ${e.position}º lugar`, up ? 'ahead' : 'behind');
+          }
+          break;
+        case 'rivalFinish':
+          if (this.sim.phase === 'finished') this.refreshStandings();
+          break;
         case 'finish':
-          this.onFinish(e.time, e.recording, e.delta);
+          if (this.sim.mode === 'race') this.onRaceFinish(e.time, e.position ?? this.sim.racers.length);
+          else this.onFinish(e.time, e.recording, e.delta);
           break;
         case 'collision': {
           this.renderer.collision(e.x, e.z, e.impact);
@@ -430,6 +567,10 @@ export class GameEngine {
   private onCheckpoint(index: number, delta: number | null): void {
     this.audio.checkpoint(delta === null ? null : delta <= 0);
     const label = `Checkpoint ${index + 1}`;
+    if (this.sim.mode === 'race') {
+      this.flash(`${label} · ${this.sim.playerPosition}º`, 'neutral');
+      return;
+    }
     if (delta !== null) {
       this.lastGhostDelta = delta;
       this.flash(`${label}  ${formatDelta(delta)}`, delta <= 0 ? 'ahead' : 'behind');
@@ -460,7 +601,14 @@ export class GameEngine {
       hasRuns: !!this.runs.last,
       trackBests: { ...s.trackBests, [this.track.id]: this.runs.best?.time ?? null },
       result: {
+        mode: 'ghost',
         time,
+        position: null,
+        standings: [],
+        difficulty: null,
+        laps: 1,
+        raceImproved: false,
+        firstWin: false,
         bestTime: this.runs.best?.time ?? null,
         previousBest,
         isNewBest,
@@ -473,13 +621,66 @@ export class GameEngine {
     });
   }
 
+  private standings(): Standing[] {
+    return this.sim.racers
+      .map((r) => ({
+        name: r.name,
+        color: r.color,
+        isPlayer: r.isPlayer,
+        position: r.finishPosition ?? r.position,
+        time: r.progress.finishTime,
+        done: r.finishPosition !== null,
+      }))
+      .sort((a, b) => (a.done === b.done ? a.position - b.position : a.done ? -1 : 1))
+      .map((r, i) => ({ name: r.name, color: r.color, isPlayer: r.isPlayer, position: i + 1, time: r.time }));
+  }
+
+  private onRaceFinish(time: number, position: number): void {
+    const s = this.store.get();
+    const key = raceRecordKey(s.difficulty, s.laps);
+    const upd = applyRaceResult(this.raceRecords, key, position, time);
+    this.raceRecords = upd.records;
+    const persisted = this.save.saveRaceRecords(this.track.key, this.raceRecords);
+    const win = position === 1;
+    this.audio.finish(win);
+    this.flash(win ? 'VITÓRIA!' : `${position}º lugar`, win ? 'record' : 'neutral');
+    this.store.set({
+      phase: 'finished',
+      raceRecords: this.raceRecords,
+      result: {
+        mode: 'race',
+        time,
+        position,
+        standings: this.standings(),
+        difficulty: s.difficulty,
+        laps: s.laps,
+        raceImproved: upd.improved,
+        firstWin: upd.firstWin,
+        bestTime: null,
+        previousBest: null,
+        isNewBest: false,
+        ghostDelta: null,
+        ghostLabel: null,
+        ghostSaved: true,
+        persisted,
+        splits: this.sim.progress.splits.slice(),
+      },
+    });
+  }
+
+  /** Rivals still racing when the player finished get their final times. */
+  private refreshStandings(): void {
+    const r = this.store.get().result;
+    if (r && r.mode === 'race') this.store.set({ result: { ...r, standings: this.standings() } });
+  }
+
   // ---------------------------------------------------------------------
   // HUD (direct DOM writes, only when values change)
 
   private resetHud(firstRun: boolean): void {
     const h = this.hud;
     h.root.dataset.visible = 'true';
-    this.hudCache = { time: '', cp: '', speed: '', boost: -1, ghost: '' };
+    this.hudCache = { time: '', cp: '', speed: '', boost: -1, ghost: '', position: '' };
     h.flash.dataset.show = 'false';
     h.message.dataset.show = 'false';
     h.countdown.dataset.show = 'false';
@@ -489,9 +690,17 @@ export class GameEngine {
     this.messageTimer = 0;
     this.countdownTimer = 0;
     this.finishedFor = 0;
-    this.hintTimer = firstRun ? 9 : 0;
-    h.hint.textContent = firstRun ? 'Complete a pista para criar seu primeiro fantasma.' : '';
-    h.hint.dataset.show = firstRun ? 'true' : 'false';
+    const race = this.sim.mode === 'race';
+    h.root.dataset.mode = race ? 'race' : 'ghost';
+    this.hudCache.position = '';
+    const hint = race
+      ? `Termine em 1º contra ${this.sim.racers.length - 1} drones · ${this.sim.progress.laps} ${this.sim.progress.laps > 1 ? 'voltas' : 'volta'}`
+      : firstRun
+        ? 'Complete a pista para criar seu primeiro fantasma.'
+        : '';
+    this.hintTimer = race ? 5 : firstRun ? 9 : 0;
+    h.hint.textContent = hint;
+    h.hint.dataset.show = hint ? 'true' : 'false';
   }
 
   private showCountdown(text: string): void {
@@ -551,8 +760,21 @@ export class GameEngine {
     h.boostBar.dataset.active = this.sim.drone.boosting ? 'true' : 'false';
     h.boostBar.dataset.low = this.sim.drone.boost < 0.12 ? 'true' : 'false';
 
-    // Persistent comparison with the ghost (last checkpoint delta).
-    const g = this.sim.ghost
+    // Race mode: live position and lap.
+    if (this.sim.mode === 'race') {
+      const r = this.sim.racers[0];
+      const pos = `${r.finishPosition ?? r.position}º/${this.sim.racers.length}`;
+      if (pos !== c.position) {
+        h.position.textContent = pos;
+        h.position.dataset.lead = (r.finishPosition ?? r.position) === 1 ? 'true' : 'false';
+        c.position = pos;
+      }
+    }
+    // Persistent comparison with the ghost (last checkpoint delta), or lap.
+    const prog = this.sim.progress;
+    const g = this.sim.mode === 'race'
+      ? `Volta ${Math.min(prog.lap + 1, prog.laps)}/${prog.laps}`
+      : this.sim.ghost
       ? this.lastGhostDelta === null
         ? `Fantasma: ${GHOST_LABEL[this.store.get().activeGhost ?? 'last']}`
         : `vs fantasma ${formatDelta(this.lastGhostDelta)}`

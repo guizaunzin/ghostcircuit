@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import type { GameEngine } from '../engine/engine';
 import { formatTime } from '../engine/format';
 import type { UiState } from '../engine/store';
+import { AI_PROFILES } from '../game/ai';
 import { getTrack, MAPS } from '../game/maps';
+import { raceRecordKey } from '../game/storage';
 import type { Track } from '../game/track';
 import { getTheme } from '../render/themes';
 
@@ -53,7 +55,11 @@ export function MapPicker({ ui, engine }: { ui: UiState; engine: GameEngine }) {
           <span className="map-meta">
             {theme.label} · {def.seed === null ? 'original' : `seed ${def.seed}`}
           </span>
-          <span className="map-best">Recorde {best !== null ? formatTime(best) : '—'}</span>
+          {ui.mode === 'race' ? (
+            <span className="map-best">{raceSummary(ui)}</span>
+          ) : (
+            <span className="map-best">Recorde {best !== null ? formatTime(best) : '—'}</span>
+          )}
           <span className="map-count">
             {index + 1}/{MAPS.length}
           </span>
@@ -64,4 +70,11 @@ export function MapPicker({ ui, engine }: { ui: UiState; engine: GameEngine }) {
       </button>
     </div>
   );
+}
+
+function raceSummary(ui: UiState): string {
+  const r = ui.raceRecords[raceRecordKey(ui.difficulty, ui.laps)];
+  const label = AI_PROFILES[ui.difficulty].label;
+  if (!r) return `${label}: sem corridas`;
+  return `${label}: ${r.wins ? `🏆 ${r.wins}` : `melhor ${r.bestPosition}º`} · ${formatTime(r.bestTime)}`;
 }

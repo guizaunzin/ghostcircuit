@@ -1,12 +1,33 @@
 // Tiny external store for UI state that changes on game transitions only
 // (never per frame). Consumed by React through useSyncExternalStore.
 
-import type { GhostChoice } from '../game/storage';
+import type { Difficulty } from '../game/ai';
+import type { GameMode } from '../game/simulation';
+import type { GhostChoice, RaceRecords } from '../game/storage';
 
 export type Phase = 'menu' | 'countdown' | 'racing' | 'paused' | 'finished';
 
+export interface Standing {
+  name: string;
+  color: string;
+  isPlayer: boolean;
+  /** Final position, or live position for drones still racing. */
+  position: number;
+  /** Total race time; null while still racing. */
+  time: number | null;
+}
+
 export interface FinishResult {
+  mode: GameMode;
   time: number;
+  /** Race mode: final position (1 = win). */
+  position: number | null;
+  standings: Standing[];
+  difficulty: Difficulty | null;
+  laps: number;
+  /** Race mode: better than the previous best for this configuration. */
+  raceImproved: boolean;
+  firstWin: boolean;
   bestTime: number | null;
   previousBest: number | null;
   isNewBest: boolean;
@@ -26,6 +47,11 @@ export interface UiState {
   result: FinishResult | null;
   /** Selected map. */
   trackId: string;
+  mode: GameMode;
+  difficulty: Difficulty;
+  laps: number;
+  /** Race-mode records of the selected map. */
+  raceRecords: RaceRecords;
   /** Personal best per map id (for the map picker). */
   trackBests: Record<string, number | null>;
   bestTime: number | null;

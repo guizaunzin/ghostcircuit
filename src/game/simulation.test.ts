@@ -85,7 +85,7 @@ describe('simulation', () => {
     const fresh = new Simulation(track);
     expect(sim.phase).toBe('countdown');
     expect(sim.raceTime).toBe(0);
-    expect(sim.progress).toEqual({ next: 0, splits: [], finishTime: null });
+    expect(sim.progress).toEqual({ next: 0, lap: 0, laps: 1, splits: [], lapTimes: [], finishTime: null });
     expect(sim.drone).toEqual(fresh.drone);
     expect(sim.drone.boost).toBe(1);
     expect(sim.recorder.sampleCount).toBe(0);

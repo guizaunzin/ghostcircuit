@@ -9,17 +9,32 @@ export const FINISH_GATE = 4;
 export interface RaceProgress {
   /** Index of the gate that must be crossed next (0..3 checkpoints, 4 = finish, 5 = done). */
   next: number;
-  /** Race time at which each checkpoint was crossed. */
+  /** Current lap (0-based). */
+  lap: number;
+  /** Laps to complete. */
+  laps: number;
+  /** Race time at which each checkpoint was crossed (4 per lap). */
   splits: number[];
+  /** Race time at the end of each completed lap. */
+  lapTimes: number[];
   finishTime: number | null;
 }
 
-export function createProgress(): RaceProgress {
-  return { next: 0, splits: [], finishTime: null };
+export function createProgress(laps = 1): RaceProgress {
+  return { next: 0, lap: 0, laps: Math.max(1, Math.floor(laps)), splits: [], lapTimes: [], finishTime: null };
+}
+
+/** Gates validated so far over the whole race (5 per lap). */
+export function gatesPassed(p: RaceProgress): number {
+  return p.lap * 5 + Math.min(p.next, 5);
 }
 
 export interface GateCrossing {
   gate: Gate;
+  /** Lap during which the gate was crossed (0-based). */
+  lap: number;
+  /** True for the finish line on the last lap. */
+  final: boolean;
   /** Exact (sub-step) race time of the crossing. */
   time: number;
   /** Interpolated crossing position. */
@@ -68,16 +83,25 @@ export function updateProgress(
   if (f < 0) return;
   // Millisecond precision: identical to what is stored with the ghost.
   const time = Math.round((t0 + dt * f) * 1000) / 1000;
-  const crossing: GateCrossing = { gate, time, x: p0x + (p1x - p0x) * f, z: p0z + (p1z - p0z) * f };
+  const lap = progress.lap;
+  let final = false;
   if (progress.next < CHECKPOINT_COUNT) {
     progress.splits.push(time);
+    progress.next++;
   } else {
-    progress.finishTime = time;
+    progress.lapTimes.push(time);
+    if (progress.lap + 1 < progress.laps) {
+      progress.lap++;
+      progress.next = 0;
+    } else {
+      progress.finishTime = time;
+      progress.next++;
+      final = true;
+    }
   }
-  progress.next++;
-  out.push(crossing);
+  out.push({ gate, lap, final, time, x: p0x + (p1x - p0x) * f, z: p0z + (p1z - p0z) * f });
 }
 
 export function isFinished(progress: RaceProgress): boolean {
-  return progress.finishTime !== null && progress.splits.length === CHECKPOINT_COUNT;
+  return progress.finishTime !== null && progress.splits.length === CHECKPOINT_COUNT * progress.laps;
 }

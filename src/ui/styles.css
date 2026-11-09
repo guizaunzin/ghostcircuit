@@ -89,8 +89,31 @@ button {
   gap: 8px;
 }
 
-.hud-cp {
+.hud-left {
   justify-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.hud-position {
+  font-family: var(--mono);
+  font-weight: 900;
+  font-size: clamp(26px, 5vw, 40px);
+  line-height: 1;
+  padding: 4px 12px;
+  border-radius: 10px;
+  background: rgba(10, 6, 24, 0.55);
+  text-shadow: 0 0 12px rgba(255, 122, 47, 0.6);
+}
+.hud-position[data-lead='true'] {
+  color: var(--amber);
+  text-shadow: 0 0 16px rgba(255, 179, 71, 0.8);
+}
+.hud:not([data-mode='race']) .hud-position {
+  display: none;
+}
+.hud-cp {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -378,6 +401,8 @@ button {
 }
 
 .panel {
+  position: relative;
+  z-index: 1;
   width: min(460px, 100%);
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -791,6 +816,80 @@ kbd {
   }
   .hud-hint {
     top: 74px;
+  }
+}
+
+/* ------------------------------------------------------------- Race mode */
+
+.mode-select {
+  width: 100%;
+}
+.race-options {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.segmented.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+.segmented.three {
+  grid-template-columns: repeat(3, 40px);
+}
+.segmented.four button {
+  font-size: 13px;
+  padding: 7px 2px;
+}
+.segmented.four button small {
+  min-height: 14px;
+}
+.segmented button[data-level='insano'][data-on='true'] {
+  background: rgba(255, 62, 110, 0.2);
+  border-color: rgba(255, 62, 110, 0.7);
+}
+.standings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.standings li {
+  display: grid;
+  grid-template-columns: 34px 14px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.standings li[data-player='true'] {
+  background: rgba(255, 122, 47, 0.18);
+  border: 1px solid rgba(255, 122, 47, 0.55);
+}
+.st-pos {
+  font-family: var(--mono);
+  font-weight: 800;
+}
+.st-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.st-name {
+  text-align: left;
+  font-weight: 700;
+}
+.st-time {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+@media (max-width: 420px) {
+  .race-options {
+    grid-template-columns: 1fr;
   }
 }
 

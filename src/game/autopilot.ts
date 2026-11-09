@@ -34,13 +34,31 @@ export class Autopilot {
     this.idx = nearest(this.route, track.start.x, track.start.z, 0, this.route.length);
   }
 
-  drive(d: DroneState, out: DroneInput): DroneInput {
+  /** Re-locates the drone on the route from scratch (after a teleport or route change). */
+  resync(x: number, z: number): void {
+    this.idx = nearest(this.route, x, z, 0, this.route.length);
+  }
+
+  /**
+   * Computes the input for one step.
+   * @param offset lateral shift of the aimed line in meters (+ = left)
+   * @param speedCap maximum speed this pilot will aim for (m/s)
+   */
+  drive(d: DroneState, out: DroneInput, offset = 0, speedCap = Infinity): DroneInput {
     const n = this.route.length;
     // Track progress locally (search a window ahead to avoid jumping).
     this.idx = nearest(this.route, d.x, d.z, this.idx - 5, 40);
+    if ((this.route[this.idx].x - d.x) ** 2 + (this.route[this.idx].z - d.z) ** 2 > 400) this.resync(d.x, d.z);
     const speed = Math.max(0, forwardSpeed(d));
     const look = 7 + speed * 0.45;
-    const target = this.pointAhead(look);
+    let target = this.pointAhead(look);
+    if (offset !== 0) {
+      const t2 = this.pointAhead(look + 2);
+      const tx = t2.x - target.x;
+      const tz = t2.z - target.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      target = { x: target.x + (-tz / tl) * offset, z: target.z + (tx / tl) * offset };
+    }
     const desiredYaw = Math.atan2(target.x - d.x, target.z - d.z);
     const err = wrapAngle(desiredYaw - d.yaw);
     // yaw decreases when steering right (positive steer).
@@ -54,10 +72,10 @@ export class Autopilot {
       if (k > maxCurv) maxCurv = k;
     }
     const latMax = 15 + this.opts.aggression * 30;
-    const vTarget = maxCurv > 1e-4 ? Math.sqrt(latMax / maxCurv) : DRONE.boostMaxSpeed;
+    const vTarget = Math.min(speedCap, maxCurv > 1e-4 ? Math.sqrt(latMax / maxCurv) : DRONE.boostMaxSpeed);
     out.throttle = speed < vTarget ? 1 : 0;
     out.brake = speed > vTarget + 2 ? clamp((speed - vTarget) / 6, 0.2, 1) : 0;
-    out.boost = this.opts.useBoost && maxCurv < 0.006 && Math.abs(err) < 0.15 && d.boost > 0.05;
+    out.boost = this.opts.useBoost && speedCap > DRONE.maxSpeed && maxCurv < 0.006 && Math.abs(err) < 0.15 && d.boost > 0.05;
     void n;
     return out;
   }
@@ -89,6 +107,11 @@ export class Autopilot {
     const lc = Math.hypot(c.x - a.x, c.z - a.z);
     if (la * lb * lc < 1e-6) return 0;
     return (2 * cross) / (la * lb * lc);
+  }
+
+  /** Current position along the route (meters). */
+  get progress(): number {
+    return this.cum[this.idx];
   }
 
   get routeLength(): number {

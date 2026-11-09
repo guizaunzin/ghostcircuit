@@ -20,6 +20,7 @@ export const Hud = forwardRef<HudRefs | null, Props>(function Hud({ ui, onPause,
   const boostFill = useRef<HTMLDivElement>(null);
   const boostBar = useRef<HTMLDivElement>(null);
   const ghostDelta = useRef<HTMLDivElement>(null);
+  const position = useRef<HTMLDivElement>(null);
   const flash = useRef<HTMLDivElement>(null);
   const countdown = useRef<HTMLDivElement>(null);
   const message = useRef<HTMLDivElement>(null);
@@ -37,6 +38,7 @@ export const Hud = forwardRef<HudRefs | null, Props>(function Hud({ ui, onPause,
       boostFill: boostFill.current!,
       boostBar: boostBar.current!,
       ghostDelta: ghostDelta.current!,
+      position: position.current!,
       flash: flash.current!,
       countdown: countdown.current!,
       message: message.current!,
@@ -53,11 +55,14 @@ export const Hud = forwardRef<HudRefs | null, Props>(function Hud({ ui, onPause,
     <div ref={root} className="hud" data-visible="false" data-touch={ui.touch ? 'true' : 'false'}>
       <div ref={vignette} className="hit-vignette" />
       <div className="hud-top">
-        <div className="hud-cp" aria-label="Checkpoint">
-          <span className="hud-label">CP</span>
-          <span ref={checkpoint} className="hud-cp-value">
-            1/4
-          </span>
+        <div className="hud-left">
+          <div className="hud-cp" aria-label="Checkpoint">
+            <span className="hud-label">CP</span>
+            <span ref={checkpoint} className="hud-cp-value">
+              1/4
+            </span>
+          </div>
+          <div ref={position} className="hud-position" aria-label="Posição" data-lead="false" />
         </div>
         <div className="hud-center">
           <div ref={time} className="hud-time" aria-live="off">

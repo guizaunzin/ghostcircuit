@@ -91,9 +91,15 @@ function buildGeometry(materials: {
   return { body, rotors };
 }
 
-export function createPlayerDrone(): DroneModel {
+/** Player drone (orange) or an AI rival when `accentColor` is given. */
+export function createPlayerDrone(accentColor = '#ff7a2f'): DroneModel {
+  const accentC = new THREE.Color(accentColor);
   const hull = new THREE.MeshLambertMaterial({ color: 0xf2eee8, flatShading: true });
-  const accent = new THREE.MeshLambertMaterial({ color: 0xff7a2f, emissive: 0x7a2600, flatShading: true });
+  const accent = new THREE.MeshLambertMaterial({
+    color: accentC,
+    emissive: accentC.clone().multiplyScalar(0.45),
+    flatShading: true,
+  });
   const dark = new THREE.MeshLambertMaterial({ color: 0x2b2838, flatShading: true });
   const rotor = new THREE.MeshBasicMaterial({ color: 0xffd2a8, transparent: true, opacity: 0.18, depthWrite: false });
   const front = new THREE.MeshBasicMaterial({ color: 0xbff8ff });
@@ -105,7 +111,7 @@ export function createPlayerDrone(): DroneModel {
   // Under-glow.
   const glowMat = new THREE.SpriteMaterial({
     map: getGlowTexture(),
-    color: 0xff8a3d,
+    color: accentC,
     transparent: true,
     opacity: 0.55,
     depthWrite: false,
@@ -116,11 +122,27 @@ export function createPlayerDrone(): DroneModel {
   glow.position.y = -0.15;
   body.add(glow);
   const materials = [hull, accent, dark, rotor, front, back, glowMat];
+  const solid = [hull, accent, dark, front, back];
+  let faded = false;
   return {
     root,
     body,
     rotors,
     materials,
+    /** Fades the drone (finished racers no longer interact). */
+    setOpacity(o: number) {
+      const want = o < 0.99;
+      if (want !== faded) {
+        faded = want;
+        for (const m of solid) {
+          m.transparent = want;
+          m.depthWrite = !want;
+          m.needsUpdate = true;
+        }
+      }
+      for (const m of solid) m.opacity = o;
+      glowMat.opacity = 0.55 * o;
+    },
     dispose() {
       materials.forEach((m) => m.dispose());
     },

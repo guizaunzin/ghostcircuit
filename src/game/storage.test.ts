@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyFinishedRun, LEGACY_RUNS_KEY, PREFS_KEY, runsKey, SaveStore, selectGhost, type StorageLike } from './storage';
+import { applyFinishedRun, applyRaceResult, raceRecordKey, RACE_PREFIX, LEGACY_RUNS_KEY, PREFS_KEY, runsKey, SaveStore, selectGhost, type StorageLike } from './storage';
 
 const TRACK_KEY = 'arena-crepusculo@2';
 const RUNS_KEY = runsKey(TRACK_KEY);
@@ -67,12 +67,12 @@ describe('SaveStore', () => {
     const best = run(40, 1);
     const last = run(45, 2);
     expect(store.saveRuns(TRACK_KEY, { last, best })).toBe(true);
-    expect(store.savePrefs({ ghost: 'best', muted: true, track: null })).toBe(true);
+    expect(store.savePrefs({ ghost: 'best', muted: true, track: null, mode: 'ghost', difficulty: 'medio', laps: 2 })).toBe(true);
     const again = new SaveStore(mem);
     const loaded = again.loadRuns(TRACK_KEY);
     expect(loaded.best!.time).toBe(40);
     expect(loaded.last!.time).toBe(45);
-    expect(again.loadPrefs()).toEqual({ ghost: 'best', muted: true, track: null });
+    expect(again.loadPrefs()).toEqual({ ghost: 'best', muted: true, track: null, mode: 'ghost', difficulty: 'medio', laps: 2 });
   });
 
   it('stores a shared last/best run only once', () => {
@@ -92,7 +92,7 @@ describe('SaveStore', () => {
     mem.setItem(PREFS_KEY, '[]oops');
     const store = new SaveStore(mem);
     expect(store.loadRuns(TRACK_KEY)).toEqual({ last: null, best: null });
-    expect(store.loadPrefs()).toEqual({ ghost: 'last', muted: false, track: null });
+    expect(store.loadPrefs()).toEqual({ ghost: 'last', muted: false, track: null, mode: 'ghost', difficulty: 'medio', laps: 2 });
     mem.setItem(RUNS_KEY, JSON.stringify({ format: 1, track: TRACK_KEY, last: { bogus: true }, best: run(40, 1) }));
     const loaded = store.loadRuns(TRACK_KEY);
     expect(loaded.last).toBeNull();
@@ -127,9 +127,9 @@ describe('SaveStore', () => {
     };
     const s2 = new SaveStore(throwing);
     expect(s2.loadRuns(TRACK_KEY)).toEqual({ last: null, best: null });
-    expect(s2.loadPrefs()).toEqual({ ghost: 'last', muted: false, track: null });
+    expect(s2.loadPrefs()).toEqual({ ghost: 'last', muted: false, track: null, mode: 'ghost', difficulty: 'medio', laps: 2 });
     expect(s2.saveRuns(TRACK_KEY, { last: run(40), best: run(40) })).toBe(false);
-    expect(s2.savePrefs({ ghost: 'best', muted: true, track: null })).toBe(false);
+    expect(s2.savePrefs({ ghost: 'best', muted: true, track: null, mode: 'ghost', difficulty: 'medio', laps: 2 })).toBe(false);
   });
 
   it('falls back to saving only the best run when quota is tight', () => {
@@ -153,7 +153,7 @@ describe('SaveStore', () => {
     store.saveRuns(other, { last: r, best: r });
     expect(store.loadRuns(other).best!.time).toBe(33);
     expect(store.loadRuns(TRACK_KEY).best!.time).toBe(40);
-    store.savePrefs({ ghost: 'last', muted: false, track: 'neon-noturno' });
+    store.savePrefs({ ghost: 'last', muted: false, track: 'neon-noturno', mode: 'ghost', difficulty: 'medio', laps: 2 });
     expect(new SaveStore(mem).loadPrefs().track).toBe('neon-noturno');
   });
 
@@ -162,5 +162,31 @@ describe('SaveStore', () => {
     mem.setItem(LEGACY_RUNS_KEY, '{"format":1,"track":"arena-crepusculo@1"}');
     new SaveStore(mem);
     expect(mem.getItem(LEGACY_RUNS_KEY)).toBeNull();
+  });
+
+  it('stores race results per map and configuration, and race prefs', () => {
+    const mem = new MemoryStorage();
+    const store = new SaveStore(mem);
+    const key = raceRecordKey('dificil', 2);
+    let r = applyRaceResult({}, key, 3, 70.5);
+    expect(r.improved).toBe(true);
+    expect(r.firstWin).toBe(false);
+    r = applyRaceResult(r.records, key, 3, 72);
+    expect(r.improved).toBe(false);
+    r = applyRaceResult(r.records, key, 1, 69.1);
+    expect(r.firstWin).toBe(true);
+    expect(r.record).toEqual({ bestPosition: 1, bestTime: 69.1, wins: 1, races: 3 });
+    expect(store.saveRaceRecords(TRACK_KEY, r.records)).toBe(true);
+    expect(new SaveStore(mem).loadRaceRecords(TRACK_KEY)[key]).toEqual(r.record);
+    expect(store.loadRaceRecords('neon-noturno@1')).toEqual({});
+    // Other track version: discarded.
+    expect(store.loadRaceRecords('arena-crepusculo@9')).toEqual({});
+    // Garbage entries are dropped, valid ones kept.
+    mem.setItem(RACE_PREFIX + 'arena-crepusculo', JSON.stringify({ format: 1, track: TRACK_KEY, results: { [key]: r.record, 'x-9': { bestPosition: -1 } } }));
+    expect(Object.keys(store.loadRaceRecords(TRACK_KEY))).toEqual([key]);
+    store.savePrefs({ ghost: 'last', muted: false, track: null, mode: 'race', difficulty: 'insano', laps: 3 });
+    expect(store.loadPrefs()).toMatchObject({ mode: 'race', difficulty: 'insano', laps: 3 });
+    mem.setItem('ghostcircuit:prefs', JSON.stringify({ mode: 'x', difficulty: 'impossivel', laps: 99 }));
+    expect(store.loadPrefs()).toMatchObject({ mode: 'ghost', difficulty: 'medio', laps: 2 });
   });
 });
