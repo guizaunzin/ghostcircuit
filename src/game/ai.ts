@@ -29,7 +29,7 @@ export const AI_PROFILES: Record<Difficulty, AiProfile> = {
   facil: { label: 'Fácil', aggression: 0.12, speedCap: 24, shortcutChance: 0, wobble: 2.2, spread: 0.06 },
   medio: { label: 'Médio', aggression: 0.4, speedCap: 29, shortcutChance: 0.25, wobble: 1, spread: 0.04 },
   dificil: { label: 'Difícil', aggression: 0.62, speedCap: 38, shortcutChance: 0.5, wobble: 0.7, spread: 0.03 },
-  insano: { label: 'Insano', aggression: 1, speedCap: DRONE.boostMaxSpeed, shortcutChance: 1, wobble: 0, spread: 0.01 },
+  insano: { label: 'Insano', aggression: 1.25, speedCap: DRONE.boostMaxSpeed, shortcutChance: 1, wobble: 0, spread: 0.01 },
 };
 
 export const RIVALS = [
@@ -71,13 +71,14 @@ export class AiDriver {
     this.rand = mulberry32(seed * 7919 + index * 104729 + 17);
     // Each rival is a little different: the first ones are the strongest.
     const skill = 1 - profile.spread * index;
-    this.aggression = clamp(profile.aggression * skill, 0.05, 1);
+    this.aggression = clamp(profile.aggression * skill, 0.05, 1.3);
     this.speedCap = profile.speedCap * (1 - profile.spread * 0.5 * index);
     const boost = this.speedCap > DRONE.maxSpeed;
     this.main = new Autopilot(track, { aggression: this.aggression, useBoost: boost, useShortcut: false });
     this.short = new Autopilot(track, { aggression: this.aggression, useBoost: boost, useShortcut: true });
     this.current = this.main;
-    this.baseOffset = (index % 2 === 0 ? 1 : -1) * (0.8 + 0.4 * (index % 3));
+    // Preferred lane: close to the ideal line, sloppier on easier levels.
+    this.baseOffset = (index % 2 === 0 ? 1 : -1) * (0.3 + 0.3 * (index % 3)) * (0.5 + profile.wobble);
     this.phase = this.rand() * Math.PI * 2;
     this.chooseRoute();
   }

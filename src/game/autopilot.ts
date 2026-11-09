@@ -75,7 +75,7 @@ export class Autopilot {
     // the yaw rate. Aggression sets how close to that limit the pilot goes.
     // Above 1 is still safe: the pursuit line cuts corners, so the radius
     // actually driven is larger than the route's.
-    const margin = 0.4 + 0.8 * clamp(this.opts.aggression, 0, 1);
+    const margin = 0.4 + 0.8 * clamp(this.opts.aggression, 0, 1.3);
     const vTarget = Math.min(speedCap, cornerSpeed(maxCurv, margin), DRONE.boostMaxSpeed);
     out.throttle = speed < vTarget ? 1 : 0;
     out.brake = speed > vTarget + 2 ? clamp((speed - vTarget) / 6, 0.2, 1) : 0;

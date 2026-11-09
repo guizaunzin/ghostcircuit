@@ -38,13 +38,13 @@ function race(mapId: string, difficulty: Difficulty, player: AiProfile, laps = 1
 /**
  * A player who holds throttle + boost the whole time and never brakes, on a
  * clean line without the shortcut (the play style reported as beating the
- * old Insano by 10 s). Starts last, 2 laps.
+ * old Insano by 10 s). Optionally takes the shortcut too. Starts last, 2 laps.
  */
-function boostHolderRace(mapId: string, difficulty: Difficulty) {
+function boostHolderRace(mapId: string, difficulty: Difficulty, shortcut = false) {
   const track = getTrack(mapId);
   const sim = new Simulation(track);
   sim.reset(null, { difficulty, laps: 2, opponents: 3 });
-  const line = new Autopilot(track, { aggression: 1, useBoost: true, useShortcut: false });
+  const line = new Autopilot(track, { aggression: 1, useBoost: true, useShortcut: shortcut });
   const input: DroneInput = { throttle: 0, brake: 0, steer: 0, boost: false };
   let position: number | null = null;
   for (let i = 0; i < 120 * 150 && sim.phase !== 'finished'; i++) {
@@ -143,6 +143,10 @@ describe('race mode', { timeout: 180000 }, () => {
       expect(boostHolderRace(m.id, 'medio'), `${m.id} médio`).toBe(1);
       expect(boostHolderRace(m.id, 'insano'), `${m.id} insano`).toBeGreaterThan(1);
     }
+  });
+
+  it('even holding boost through the shortcut on a perfect line loses to Insano', () => {
+    for (const m of MAPS) expect(boostHolderRace(m.id, 'insano', true), m.id).toBeGreaterThan(1);
   });
 
   it('a weak pilot cannot beat Insano', () => {

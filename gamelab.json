@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "projectId": "fantasma",
   "repository": "guizaunzin/ghostcircuit",
-  "updatedAt": "2026-11-09T01:30:00Z",
+  "updatedAt": "2026-11-09T02:10:00Z",
   "summary": "Corrida de drones em 3D no navegador com dois modos: contra o próprio fantasma (cada corrida completa vira um fantasma para a próxima tentativa) e corrida contra 3 drones de IA com dificuldade configurável (Fácil, Médio, Difícil e Insano) em 1 a 3 voltas. Cinco pistas (Arena Crepúsculo, feita à mão, e quatro geradas por seed com temas próprios), quatro checkpoints em ordem, boost recarregável e um atalho estreito por pista. Tudo roda no cliente (React, TypeScript, Vite e Three.js), sem backend; recordes, fantasmas e resultados contra a IA ficam no localStorage, separados por pista.",
   "nextTask": "Jogar de novo o Médio e o Insano no computador para confirmar o novo equilíbrio, e o modo Corrida num celular físico para medir o desempenho com 4 drones.",
   "features": [
@@ -70,7 +70,7 @@
       "id": "ai-difficulty",
       "text": "Dificuldade configurável dos rivais (Fácil, Médio, Difícil e Insano). Eles usam a mesma física do jogador e freiam pelo limite real de giro do drone; a dificuldade muda teto de velocidade, margem nas curvas, uso de boost e do atalho e precisão da linha.",
       "status": "validated",
-      "evidence": "src/game/raceMode.test.ts: os rivais ficam mais rápidos a cada nível em todas as pistas; quem segura acelerador e boost sem frear vence o Médio e perde para o Insano em todas as pistas; piloto forte vence Fácil e Médio largando em último. npm test passou em 09/11/2026 (78/78)."
+      "evidence": "src/game/raceMode.test.ts: os rivais ficam mais rápidos a cada nível em todas as pistas; quem segura acelerador e boost sem frear vence o Médio e perde para o Insano em todas as pistas, inclusive com atalho e linha perfeita; piloto forte vence Fácil e Médio largando em último. npm test passou em 09/11/2026 (79/79)."
     },
     {
       "id": "race-records",
@@ -125,7 +125,7 @@
     {
       "id": "ai-too-easy",
       "date": "2026-11-09T01:30:00Z",
-      "text": "Corrigido: Médio e Insano fáceis demais. Num computador, segurando o boost a corrida toda, dava para abrir 10 s no Insano em 2 voltas. A IA freava demais e quase não usava o boost; os rivais do Insano ficaram 3–5 s por volta mais rápidos e os do Médio ~4 s."
+      "text": "Corrigido: Médio e Insano fáceis demais. Num computador, segurando o boost a corrida toda, dava para abrir 10 s no Insano em 2 voltas (reproduzido em simulação: 6–10 s à frente com atalho, 3–7 s sem). A IA freava demais e quase não usava o boost. Agora o mesmo estilo perde em todas as pistas, até com linha perfeita e atalho; o Médio ficou ~4 s por volta mais rápido."
     },
     {
       "id": "pillars-in-walls",
@@ -151,8 +151,8 @@
   "tests": [
     {
       "id": "unit-2026-11-09b",
-      "date": "2026-11-09T01:20:00Z",
-      "text": "npm test (Vitest): 6 arquivos, 78 testes passando, incluindo o novo teste do jogador que segura o boost (vence o Médio e perde para o Insano em todas as pistas). npm run test:e2e: 55 verificações passando, sem erros no console."
+      "date": "2026-11-09T02:10:00Z",
+      "text": "npm test (Vitest): 6 arquivos, 79 testes passando, incluindo o jogador que segura o boost (vence o Médio, perde para o Insano em todas as pistas, inclusive com atalho). npm run test:e2e: 55 verificações passando, sem erros no console."
     },
     {
       "id": "e2e-2026-11-09",
