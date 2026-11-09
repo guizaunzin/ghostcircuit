@@ -26,9 +26,18 @@ export interface DronePose {
   roll: number;
 }
 
+export interface RivalFrame {
+  pose: DronePose;
+  /** Finished rivals are drawn see-through. */
+  faded: boolean;
+}
+
 export interface RenderFrame {
   mode: 'menu' | 'race';
   drone: DronePose;
+  /** Player finished a race: drawn see-through. */
+  playerFaded: boolean;
+  rivals: RivalFrame[];
   speed: number;
   boosting: boolean;
   hitFlash: number;
@@ -59,6 +68,8 @@ export class GameRenderer {
   readonly camera: THREE.PerspectiveCamera;
   private player: DroneModel;
   private ghost: DroneModel;
+  private rivals: { model: DroneModel; shadow: THREE.Mesh; label: THREE.Sprite }[] = [];
+  private rivalKey = '';
   private visuals: TrackVisuals | null = null;
   /** Everything that depends on the current track (rebuilt on track change). */
   private world: THREE.Group | null = null;
@@ -139,6 +150,34 @@ export class GameRenderer {
     this.scene.add(this.particles.points);
   }
 
+  /** Creates (or reuses) the AI rival models for a race. */
+  setRivals(list: { name: string; color: string }[]): void {
+    const key = list.map((r) => r.name + r.color).join('|');
+    if (key === this.rivalKey) return;
+    this.rivalKey = key;
+    for (const r of this.rivals) {
+      this.scene.remove(r.model.root, r.shadow, r.label);
+      r.model.dispose();
+      r.shadow.geometry.dispose();
+      (r.shadow.material as THREE.Material).dispose();
+      r.label.material.map?.dispose();
+      r.label.material.dispose();
+    }
+    this.rivals = list.map((info) => {
+      const model = createPlayerDrone(info.color);
+      const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), (this.shadow.material as THREE.Material).clone());
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.renderOrder = 4;
+      const label = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: nameTexture(info.name, info.color), transparent: true, depthWrite: false, depthTest: true }),
+      );
+      label.scale.set(3.2, 0.8, 1);
+      label.renderOrder = 8;
+      this.scene.add(model.root, shadow, label);
+      return { model, shadow, label };
+    });
+  }
+
   /** Builds the world for a track (sky, scenery, track meshes), replacing the previous one. */
   loadTrack(track: Track): void {
     if (this.loadedTrack === track) return;
@@ -208,6 +247,27 @@ export class GameRenderer {
     const spin = (f.mode === 'race' ? 40 + f.speed * 2 : 30) * dt;
     this.player.rotors.forEach((r, i) => (r.rotation.y += i % 2 ? spin : -spin));
     this.shadow.position.set(d.x, 0.08, d.z);
+    this.player.setOpacity?.(f.playerFaded ? 0.35 : 1);
+
+    // --- AI rivals ---
+    for (let k = 0; k < this.rivals.length; k++) {
+      const r = this.rivals[k];
+      const rf = f.rivals[k];
+      const visible = !!rf;
+      r.model.root.visible = r.shadow.visible = r.label.visible = visible;
+      if (!rf) continue;
+      const p = rf.pose;
+      r.model.root.position.set(p.x, p.y, p.z);
+      r.model.root.rotation.set(0, p.yaw, 0);
+      r.model.body.rotation.set(p.pitch, 0, p.roll, 'YXZ');
+      r.model.rotors.forEach((ro, i) => (ro.rotation.y += i % 2 ? spin : -spin));
+      r.model.setOpacity?.(rf.faded ? 0.3 : 1);
+      r.shadow.position.set(p.x, 0.08, p.z);
+      r.label.position.set(p.x, p.y + 1.7, p.z);
+      // Names fade out up close so they never cover the player's view.
+      const dist = Math.hypot(p.x - this.camera.position.x, p.z - this.camera.position.z);
+      r.label.material.opacity = (rf.faded ? 0.4 : 1) * clamp((dist - 5) / 6, 0, 1);
+    }
     // Hit flash: tint hull.
     const hull = this.player.materials[0] as THREE.MeshLambertMaterial;
     hull.emissive.setRGB(f.hitFlash * 2.2, f.hitFlash * 0.6, f.hitFlash * 0.4);
@@ -370,6 +430,26 @@ export class GameRenderer {
     });
     this.renderer.dispose();
   }
+}
+
+function nameTexture(name: string, color: string): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgba(10,6,24,0.7)';
+  g.beginPath();
+  g.roundRect(4, 8, 248, 48, 16);
+  g.fill();
+  g.fillStyle = color;
+  g.fillRect(18, 22, 20, 20);
+  g.fillStyle = '#ffffff';
+  g.font = 'bold 30px system-ui, sans-serif';
+  g.textBaseline = 'middle';
+  g.fillText(name, 50, 33);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 /** Frees GPU resources of a subtree (geometries, materials, textures). */

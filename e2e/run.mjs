@@ -251,6 +251,57 @@ try {
   s = await state(page);
   check(s.trackId === otherId && s.bestTime === otherBest, 'pista escolhida e recorde lembrados após recarregar');
 
+  console.log('8. Corrida contra drones de IA (dificuldade configurável)');
+  await page.getByRole('radio', { name: /Corrida vs IA/ }).click();
+  await page.getByRole('radio', { name: /^Fácil/ }).click();
+  await page.getByRole('radio', { name: '1', exact: true }).click();
+  s = await page.evaluate(() => {
+    const e = window.__ghostCircuit;
+    return { mode: e.state.mode, difficulty: e.state.difficulty, laps: e.state.laps, racers: e.sim.racers.length };
+  });
+  check(s.mode === 'race' && s.difficulty === 'facil' && s.laps === 1 && s.racers === 4, 'modo corrida: Fácil, 1 volta, 3 rivais no grid');
+  await page.screenshot({ path: `${SHOTS}/08-race-menu.png` });
+  await page.getByRole('button', { name: 'Jogar' }).click();
+  await page.waitForTimeout(300);
+  check((await page.textContent('.hud-position')).trim() === '4º/4', 'jogador larga em último (4º/4)');
+  await page.screenshot({ path: `${SHOTS}/08b-race-grid.png` });
+  s = await race(page, { aggression: 0.95, useBoost: true, useShortcut: true });
+  check(s.result.mode === 'race' && s.result.position === 1, `vence os drones no Fácil (${s.result.time.toFixed(2)}s)`);
+  check(await page.getByRole('heading', { name: 'Vitória!' }).isVisible(), 'tela de vitória com classificação');
+  check((await page.locator('.standings li').count()) === 4, 'classificação com 4 drones');
+  let raceStore = await page.evaluate((id) => JSON.parse(localStorage.getItem('ghostcircuit:race:' + id)), otherId);
+  check(raceStore && raceStore.results['facil-1'].wins === 1, 'vitória salva por pista e dificuldade');
+  await page.screenshot({ path: `${SHOTS}/08c-race-win.png` });
+  // Harder rivals beat a weak pilot.
+  await page.getByRole('radio', { name: /^Insano/ }).click();
+  await page.getByRole('button', { name: /Correr de novo/ }).click();
+  s = await state(page);
+  check(s.phase === 'countdown', 'nova corrida no Insano direto da tela final');
+  s = await race(page, { aggression: 0.1, useBoost: false, useShortcut: false });
+  check(s.result.position > 1, `piloto fraco perde no Insano (${s.result.position}º)`);
+  await page.screenshot({ path: `${SHOTS}/08d-race-lose.png` });
+  raceStore = await page.evaluate((id) => JSON.parse(localStorage.getItem('ghostcircuit:race:' + id)), otherId);
+  check(raceStore.results['insano-1'].wins === 0 && raceStore.results['facil-1'].wins === 1, 'resultados separados por dificuldade');
+  await page.reload();
+  await page.waitForFunction(() => !!window.__ghostCircuit, null, { timeout: 20000 });
+  s = await page.evaluate(() => ({ ...window.__ghostCircuit.state }));
+  check(s.mode === 'race' && s.difficulty === 'insano' && s.laps === 1, 'modo, dificuldade e voltas lembrados');
+  check((await page.textContent('.map-best')).includes('Insano'), `cartão da pista mostra o resultado da configuração ("${await page.textContent('.map-best')}")`);
+  // Abandon a race midway: nothing is saved.
+  await page.getByRole('button', { name: 'Jogar' }).click();
+  await page.evaluate(() => window.__ghostCircuit.setAutopilot({ aggression: 0.6, useBoost: true, useShortcut: false }));
+  await page.waitForFunction(() => window.__ghostCircuit.sim.progress.next >= 1, null, { timeout: 60000 });
+  await page.keyboard.press('KeyR');
+  await page.evaluate(() => window.__ghostCircuit.setAutopilot(null));
+  const afterAbandon = await page.evaluate((id) => JSON.parse(localStorage.getItem('ghostcircuit:race:' + id)), otherId);
+  check(afterAbandon.results['insano-1'].races === 1, 'corrida abandonada não conta');
+  // Ghost mode is still there and intact.
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.getByRole('radio', { name: /Contra o fantasma/ }).click();
+  s = await state(page);
+  check(s.bestTime === otherBest && (await page.getByRole('radio', { name: /Meu recorde/ }).isVisible()), 'modo fantasma mantém recorde e seletor de fantasma');
+
   // Corrupted storage must not break the game.
   await page.evaluate((id) => localStorage.setItem('ghostcircuit:runs:' + id, '{"format":1,"track":"x"'), otherId);
   await page.reload();
@@ -260,7 +311,7 @@ try {
   await ctx.close();
 
   // ------------------------------------------------------------------- mobile
-  console.log('8. Celular (viewport touch)');
+  console.log('9. Celular (viewport touch, modo corrida)');
   const mctx = await browser.newContext({ ...devices['Pixel 7'] });
   const m = await mctx.newPage();
   watch(m, 'mobile');
@@ -268,6 +319,8 @@ try {
   await m.waitForFunction(() => !!window.__ghostCircuit, null, { timeout: 20000 });
   await m.screenshot({ path: `${SHOTS}/07-mobile-menu-portrait.png` });
   await m.setViewportSize({ width: 915, height: 412 });
+  await m.getByRole('radio', { name: /Corrida vs IA/ }).tap();
+  await m.screenshot({ path: `${SHOTS}/07a-mobile-race-menu-landscape.png` });
   await m.getByRole('button', { name: 'Jogar' }).tap();
   await waitPhase(m, 'racing', 20000);
   check(await m.locator('.touch-btn.t-throttle').isVisible(), 'botões touch visíveis');

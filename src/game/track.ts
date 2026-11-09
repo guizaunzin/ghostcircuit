@@ -324,14 +324,83 @@ export interface SdfResult {
 
 const tmpCp: ClosestPoint = { x: 0, z: 0, t: 0, d: 0 };
 
-export function corridorSdf(c: Corridor, x: number, z: number, out: SdfResult): SdfResult {
+// Uniform grid over each corridor: every cell lists the segments that can be
+// the closest one for points in the cell whose SDF is <= GRID_MARGIN. Queries
+// inside/near the track only test a handful of segments; anything farther
+// falls back to the exhaustive scan, so results are always exact.
+const GRID_CELL = 10;
+const GRID_MARGIN = 12;
+
+interface CorridorGrid {
+  minX: number;
+  minZ: number;
+  cols: number;
+  rows: number;
+  cells: (Int32Array | null)[];
+}
+
+const grids = new WeakMap<Corridor, CorridorGrid>();
+
+function getGrid(c: Corridor): CorridorGrid {
+  let g = grids.get(c);
+  if (g) return g;
   const pts = c.points;
   const n = pts.length;
   const segs = c.closed ? n : n - 1;
+  let maxHw = 0;
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const p of pts) {
+    maxHw = Math.max(maxHw, p.hw);
+    minX = Math.min(minX, p.x);
+    minZ = Math.min(minZ, p.z);
+    maxX = Math.max(maxX, p.x);
+    maxZ = Math.max(maxZ, p.z);
+  }
+  const pad = maxHw + GRID_MARGIN + GRID_CELL;
+  minX -= pad;
+  minZ -= pad;
+  const cols = Math.ceil((maxX + pad - minX) / GRID_CELL);
+  const rows = Math.ceil((maxZ + pad - minZ) / GRID_CELL);
+  const lists: number[][] = Array.from({ length: cols * rows }, () => []);
+  const reach = maxHw + GRID_MARGIN;
+  for (let i = 0; i < segs; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const c0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - reach - minX) / GRID_CELL));
+    const c1 = Math.min(cols - 1, Math.floor((Math.max(a.x, b.x) + reach - minX) / GRID_CELL));
+    const r0 = Math.max(0, Math.floor((Math.min(a.z, b.z) - reach - minZ) / GRID_CELL));
+    const r1 = Math.min(rows - 1, Math.floor((Math.max(a.z, b.z) + reach - minZ) / GRID_CELL));
+    for (let r = r0; r <= r1; r++) for (let q = c0; q <= c1; q++) lists[r * cols + q].push(i);
+  }
+  g = { minX, minZ, cols, rows, cells: lists.map((l) => (l.length ? Int32Array.from(l) : null)) };
+  grids.set(c, g);
+  return g;
+}
+
+export function corridorSdf(c: Corridor, x: number, z: number, out: SdfResult): SdfResult {
+  const g = getGrid(c);
+  const q = Math.floor((x - g.minX) / GRID_CELL);
+  const r = Math.floor((z - g.minZ) / GRID_CELL);
+  const cell = q >= 0 && r >= 0 && q < g.cols && r < g.rows ? g.cells[r * g.cols + q] : null;
+  if (cell) {
+    sdfOverSegments(c, x, z, out, cell);
+    if (out.d <= GRID_MARGIN) return out;
+  }
+  return sdfOverSegments(c, x, z, out, null);
+}
+
+function sdfOverSegments(c: Corridor, x: number, z: number, out: SdfResult, list: Int32Array | null): SdfResult {
+  const pts = c.points;
+  const n = pts.length;
+  const segs = list ? list.length : c.closed ? n : n - 1;
   let best = Infinity;
   let bx = 0;
   let bz = 0;
-  for (let i = 0; i < segs; i++) {
+  for (let k = 0; k < segs; k++) {
+    const i = list ? list[k] : k;
     const a = pts[i];
     const b = pts[(i + 1) % n];
     // Cheap reject: a lower bound of the true distance (segments are ~1.5 m).

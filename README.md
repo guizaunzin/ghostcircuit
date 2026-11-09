@@ -8,6 +8,22 @@ Corrida de drones no navegador contra o seu próprio fantasma. Uma pista, quatro
 - Geometria, texturas e sons gerados proceduralmente (nenhum asset externo).
 - Recorde, gravações do fantasma e preferências ficam no `localStorage`.
 
+## Modos de jogo
+
+- **Contra o fantasma** (contra o relógio): uma volta contra a sua própria gravação, a última corrida ou o recorde. Cada corrida completa vira um fantasma.
+- **Corrida vs IA**: você larga em último contra 3 drones rivais (Vespa, Falcão e Cometa), em 1, 2 ou 3 voltas, e precisa cruzar a chegada em 1º.
+  - Os rivais usam a mesma física que você. A dificuldade só muda como eles pilotam: velocidade alvo, agressividade nas curvas, uso de boost e do atalho, e precisão da linha.
+  - Os drones colidem entre si. Quem termina a corrida fica translúcido e para de colidir.
+  - O HUD mostra posição, volta e avisos de ultrapassagem. A tela final mostra a classificação.
+  - Cada pista guarda, por dificuldade e número de voltas, a melhor posição, o melhor tempo e as vitórias. Corridas abandonadas não contam, e corridas contra a IA não geram fantasmas.
+
+| Dificuldade | Rivais (tempo de volta típico) |
+| --- | --- |
+| Fácil | ~40–47 s, sem boost nem atalho, linha imprecisa |
+| Médio | ~37–41 s, atalho às vezes |
+| Difícil | ~31–35 s, velocidade máxima, atalho com frequência |
+| Insano | ~29–34 s, boost nas retas, quase sempre pelo atalho |
+
 ## Pistas
 
 | Pista | Tema | Origem |
@@ -79,7 +95,7 @@ npm run gen:map      # ferramentas do gerador de pistas (veja "Pistas")
 
 ### Teste ponta a ponta
 
-`npm run test:e2e` sobe o `vite preview`, abre o jogo no Chromium (Playwright) com `?test` — que expõe o motor em `window.__ghostCircuit` e permite que um piloto automático dirija — e valida o fluxo completo: abrir e iniciar; completar os 4 checkpoints e a chegada; reiniciar contra o fantasma recém-gravado; bater o recorde e atualizar a gravação certa; recarregar e recuperar os dados; abandonar uma tentativa sem perder gravações; trocar de pista com recordes separados; pausa ao perder o foco; dados corrompidos; controles touch com toques simultâneos em viewport de celular; ausência de erros no console. Capturas de tela vão para `e2e/output/`.
+`npm run test:e2e` sobe o `vite preview`, abre o jogo no Chromium (Playwright) com `?test` — que expõe o motor em `window.__ghostCircuit` e permite que um piloto automático dirija — e valida o fluxo completo: abrir e iniciar; completar os 4 checkpoints e a chegada; reiniciar contra o fantasma recém-gravado; bater o recorde e atualizar a gravação certa; recarregar e recuperar os dados; abandonar uma tentativa sem perder gravações; trocar de pista com recordes separados; corrida vs IA (vencer no Fácil, perder no Insano com piloto fraco, resultados por dificuldade, preferências lembradas, corrida abandonada não conta); pausa ao perder o foco; dados corrompidos; controles touch com toques simultâneos em viewport de celular; ausência de erros no console. Capturas de tela vão para `e2e/output/`.
 
 Se o Chromium do Playwright não estiver instalado na sua máquina: `npx playwright install chromium`.
 
@@ -115,8 +131,9 @@ src/
     race.ts        regras: checkpoints em ordem, cruzamento direcional varrido
     ghost.ts       gravação (20 Hz, timestamps da corrida) e reprodução interpolada
     storage.ts     persistência versionada e validada no localStorage
-    simulation.ts  uma tentativa: contagem, corrida, gravação, recuperação
-    autopilot.ts   piloto automático usado só nos testes
+    simulation.ts  uma tentativa: contagem, corredores, voltas, posições, colisões entre drones, gravação, recuperação
+    ai.ts          rivais de IA: perfis de dificuldade, ultrapassagem, escolha de rota
+    autopilot.ts   seguidor de rota (base da IA e dos testes)
   engine/      loop do jogo, entrada (teclado/touch), áudio sintetizado, HUD
   render/      cena Three.js: ambiente, temas por pista, pista, drones, câmera, partículas
   ui/          React: menus, HUD (estático, atualizado por refs), controles touch
@@ -131,7 +148,8 @@ Decisões principais:
 - **Checkpoints** são segmentos com direção. Cada passo testa o segmento entre a posição anterior e a atual (funciona em qualquer velocidade), exige o lado de trás → frente e só aceita o *próximo* portal esperado. Pular checkpoints, passar ao contrário ou ficar parado dentro do portal não conta. Os tempos de passagem são interpolados dentro do passo e arredondados ao milissegundo.
 - **Fantasma**: amostras `[t, x, y, z, yaw, pitch, roll]` a 20 Hz, mais uma amostra exata na chegada. A reprodução usa busca binária no tempo da corrida, Catmull-Rom na posição e interpolação pelo arco mais curto nos ângulos. A gravação usada numa tentativa é fixa durante a corrida. Limite de 5 min (6000 amostras).
 - **Pistas como dados**: checkpoints e obstáculos são posicionados pela distância ao longo da pista e pelo deslocamento lateral, não por coordenadas absolutas. Assim continuam no lugar certo quando o traçado muda.
-- **Persistência**: uma chave por pista (`ghostcircuit:runs:<id>`), com versão de formato e `pista@versão`. Gravações de outra versão da pista são descartadas; tudo é validado ao ler. Quando o recorde e a última corrida são a mesma gravação, ela é salva uma vez só. Se a cota estourar, guarda pelo menos o recorde. Sem `localStorage`, o jogo funciona normalmente e avisa que nada será salvo.
+- **Persistência**: uma chave por pista (`ghostcircuit:runs:<id>` para fantasmas e `ghostcircuit:race:<id>` para resultados contra a IA), com versão de formato e `pista@versão`.
+- **Desempenho**: a distância até as paredes usa uma grade espacial por corredor, com resultado idêntico à busca completa. Assim, simular 4 drones a 120 Hz continua leve no celular. Gravações de outra versão da pista são descartadas; tudo é validado ao ler. Quando o recorde e a última corrida são a mesma gravação, ela é salva uma vez só. Se a cota estourar, guarda pelo menos o recorde. Sem `localStorage`, o jogo funciona normalmente e avisa que nada será salvo.
 - **Desempenho**: objetos instanciados (paredes, torres), sem sombras em tempo real (sombra "blob"), resolução adaptativa conforme o FPS, menos decoração e pixel ratio menor em celulares.
 
 ## Limitações conhecidas
