@@ -2,51 +2,51 @@
   "schemaVersion": 1,
   "projectId": "fantasma",
   "repository": "guizaunzin/ghostcircuit",
-  "updatedAt": "2026-11-08T19:30:00Z",
-  "summary": "Corrida de drones em 3D no navegador contra o próprio fantasma. Cinco pistas (Arena Crepúsculo, feita à mão, e quatro geradas por seed com temas próprios), quatro checkpoints em ordem, boost recarregável e um atalho estreito por pista. Cada corrida completa vira um fantasma para a próxima tentativa. Tudo roda no cliente (React, TypeScript, Vite e Three.js), sem backend; recordes e fantasmas ficam no localStorage, separados por pista.",
-  "nextTask": "Jogar uma volta completa em cada uma das cinco pistas num celular físico e num computador com GPU real, avaliando a sensação dos controles e o desempenho. Até agora os testes automatizados só rodaram em Chromium com renderização por software.",
+  "updatedAt": "2026-11-09T00:48:00Z",
+  "summary": "Corrida de drones em 3D no navegador com dois modos: contra o próprio fantasma (cada corrida completa vira um fantasma para a próxima tentativa) e corrida contra 3 drones de IA com dificuldade configurável (Fácil, Médio, Difícil e Insano) em 1 a 3 voltas. Cinco pistas (Arena Crepúsculo, feita à mão, e quatro geradas por seed com temas próprios), quatro checkpoints em ordem, boost recarregável e um atalho estreito por pista. Tudo roda no cliente (React, TypeScript, Vite e Three.js), sem backend; recordes, fantasmas e resultados contra a IA ficam no localStorage, separados por pista.",
+  "nextTask": "Jogar o modo Corrida vs IA num celular físico e num computador com GPU real, em cada dificuldade, para ajustar o equilíbrio (a dificuldade foi calibrada com pilotos controlados por código) e medir o desempenho com 4 drones. Até agora os testes automatizados só rodaram em Chromium com renderização por software.",
   "features": [
     {
       "id": "checkpoints",
       "text": "Quatro checkpoints obrigatórios, em ordem, com cruzamento direcional (pular, passar ao contrário ou parar dentro do portal não conta) e chegada.",
       "status": "validated",
-      "evidence": "src/game/race.test.ts passou em 08/11/2026 (npm test: 62/62)."
+      "evidence": "src/game/race.test.ts e src/game/raceMode.test.ts (regras de várias voltas): npm test passou em 09/11/2026 (77/77)."
     },
     {
       "id": "ghost",
       "text": "Gravação do fantasma a 20 Hz e reprodução interpolada; antes de cada tentativa dá para escolher entre a última corrida e o recorde, com diferença de tempo em cada checkpoint.",
       "status": "validated",
-      "evidence": "src/game/ghost.test.ts e src/game/simulation.test.ts passaram em 08/11/2026 (npm test: 62/62)."
+      "evidence": "src/game/ghost.test.ts e src/game/simulation.test.ts: npm test passou em 09/11/2026 (77/77). Fluxo completo no navegador: npm run test:e2e passou em 09/11/2026 (55/55, sem erros no console)."
     },
     {
       "id": "tracks",
       "text": "Cinco pistas com temas visuais próprios, cada uma com reta para o boost, curvas variadas e um atalho estreito entre dois checkpoints.",
       "status": "validated",
-      "evidence": "src/game/maps.test.ts valida todas as pistas (obstáculos com espaço para passar, portais impossíveis de contornar, atalho mais curto, volta completa do piloto automático) e passou em 08/11/2026."
+      "evidence": "src/game/maps.test.ts valida todas as pistas (obstáculos com espaço para passar, portais impossíveis de contornar, atalho mais curto, volta completa do piloto automático): npm test passou em 09/11/2026 (77/77)."
     },
     {
       "id": "generator",
       "text": "Gerador procedural de pistas por seed, com o resultado gravado como dados para que todo navegador monte a mesma pista (npm run gen:map / gen:maps).",
       "status": "validated",
-      "evidence": "src/game/maps.test.ts confere que as pistas geradas são idênticas ao que a seed produz; passou em 08/11/2026."
+      "evidence": "src/game/maps.test.ts confere que as pistas geradas são idênticas ao que a seed produz: npm test passou em 09/11/2026 (77/77)."
     },
     {
       "id": "storage",
       "text": "Recorde e fantasmas salvos por pista no localStorage, com versão de formato; dados corrompidos ou de outra versão da pista são descartados, e sem localStorage o jogo avisa e continua.",
       "status": "validated",
-      "evidence": "src/game/storage.test.ts passou em 08/11/2026 (npm test: 62/62)."
+      "evidence": "src/game/storage.test.ts: npm test passou em 09/11/2026 (77/77)."
     },
     {
       "id": "touch-controls",
       "text": "Controles touch com joystick virtual e botões de acelerar, frear e boost, aceitando toques simultâneos; teclado no desktop.",
-      "status": "implemented",
-      "evidence": "Coberto pelo teste ponta a ponta em e2e/run.mjs (viewport de celular), que não foi executado nesta verificação."
+      "status": "validated",
+      "evidence": "e2e/run.mjs em viewport de celular (toques simultâneos acelerar + direção, sem rolagem da página, modo Corrida): npm run test:e2e passou em 09/11/2026 (55/55, sem erros no console)."
     },
     {
       "id": "renderer",
-      "text": "Cena Three.js com temas por pista, partículas, câmera de perseguição e resolução adaptativa ao FPS.",
+      "text": "Cena Three.js com temas por pista, drones rivais com nome flutuante, partículas, câmera de perseguição e resolução adaptativa ao FPS.",
       "status": "implemented",
-      "evidence": ""
+      "evidence": "Inspeção visual de capturas em Chromium com renderização por software em 09/11/2026; sem teste automatizado de renderização."
     },
     {
       "id": "audio",
@@ -57,8 +57,26 @@
     {
       "id": "focus-pause",
       "text": "Pausa automática ao trocar de aba ou janela, soltando todos os controles.",
-      "status": "implemented",
-      "evidence": "Coberto pelo teste ponta a ponta em e2e/run.mjs, que não foi executado nesta verificação."
+      "status": "validated",
+      "evidence": "e2e/run.mjs (perder o foco pausa a corrida, Esc retoma): npm run test:e2e passou em 09/11/2026 (55/55, sem erros no console)."
+    },
+    {
+      "id": "race-mode",
+      "text": "Modo Corrida vs IA: o jogador larga em último contra 3 drones rivais em 1, 2 ou 3 voltas e vence quem cruzar a chegada primeiro. Há colisão entre drones, posição ao vivo no HUD, avisos de ultrapassagem e de última volta, e tela final com a classificação.",
+      "status": "validated",
+      "evidence": "src/game/raceMode.test.ts (voltas, grid, posições, colisões entre drones, determinismo): npm test passou em 09/11/2026 (77/77). Fluxo no navegador (vencer, perder, classificação, celular): npm run test:e2e passou em 09/11/2026 (55/55, sem erros no console)."
+    },
+    {
+      "id": "ai-difficulty",
+      "text": "Dificuldade configurável dos rivais (Fácil, Médio, Difícil e Insano). Eles usam a mesma física do jogador; a dificuldade muda velocidade alvo, agressividade nas curvas, uso de boost e do atalho e precisão da linha.",
+      "status": "validated",
+      "evidence": "src/game/raceMode.test.ts: em todas as 5 pistas os rivais ficam mais rápidos a cada nível, um piloto forte vence Fácil e Médio largando em último e um piloto fraco perde no Insano. npm test passou em 09/11/2026 (77/77)."
+    },
+    {
+      "id": "race-records",
+      "text": "Resultados da Corrida salvos por pista, dificuldade e número de voltas (melhor posição, melhor tempo e vitórias); corridas abandonadas não contam e corridas contra a IA não geram fantasmas. Modo, dificuldade e voltas escolhidos ficam salvos.",
+      "status": "validated",
+      "evidence": "src/game/storage.test.ts: npm test passou em 09/11/2026 (77/77). Persistência após recarregar e corrida abandonada: npm run test:e2e passou em 09/11/2026 (55/55, sem erros no console)."
     }
   ],
   "decisions": [
@@ -81,6 +99,21 @@
       "id": "storage-per-track",
       "date": "2026-11-07T12:41:44Z",
       "text": "Uma chave de localStorage por pista, com pista@versão. Mudar o traçado exige subir a versão da pista, o que descarta os fantasmas antigos dela."
+    },
+    {
+      "id": "ai-same-physics",
+      "date": "2026-11-09T00:36:00Z",
+      "text": "Os drones de IA usam exatamente a mesma física do jogador. A dificuldade só muda a pilotagem (velocidade alvo, agressividade, boost, atalho e precisão), sem trapaça de velocidade nem rubber-banding."
+    },
+    {
+      "id": "race-no-ghost",
+      "date": "2026-11-09T00:36:00Z",
+      "text": "Corridas contra a IA não geram fantasmas nem contam para o recorde do modo fantasma, porque colisões e várias voltas tornam os tempos incomparáveis. Os resultados ficam numa chave própria (ghostcircuit:race:<pista>)."
+    },
+    {
+      "id": "sdf-grid",
+      "date": "2026-11-09T00:36:00Z",
+      "text": "A distância até as paredes usa uma grade espacial por corredor, com resultado idêntico à busca completa, para manter leve a simulação de 4 drones a 120 Hz."
     }
   ],
   "bugs": [
@@ -96,11 +129,26 @@
     },
     {
       "id": "real-device-performance",
-      "date": "2026-11-07T12:41:44Z",
-      "text": "Limitação conhecida: o desempenho em GPUs reais e celulares físicos ainda não foi medido."
+      "date": "2026-11-09T00:48:00Z",
+      "text": "Limitação conhecida: o desempenho em GPUs reais e celulares físicos ainda não foi medido, agora também com 4 drones no modo Corrida."
+    },
+    {
+      "id": "ai-balance-unverified",
+      "date": "2026-11-09T00:48:00Z",
+      "text": "Limitação conhecida: a dificuldade da IA foi calibrada com pilotos controlados por código; ainda falta confirmar com jogadores humanos se Médio e Difícil estão no ponto certo."
     }
   ],
   "tests": [
+    {
+      "id": "e2e-2026-11-09",
+      "date": "2026-11-09T00:47:47Z",
+      "text": "npm run test:e2e (Playwright, Chromium com renderização por software): 55 verificações passando, sem erros no console — fluxo do fantasma, troca de pista, Corrida vs IA (vencer no Fácil, perder no Insano, resultados por dificuldade, corrida abandonada) e celular com toque."
+    },
+    {
+      "id": "unit-2026-11-09",
+      "date": "2026-11-09T00:44:28Z",
+      "text": "npm test (Vitest): 6 arquivos, 77 testes passando — corrida, fantasma, simulação, armazenamento, validação de todas as pistas e modo Corrida vs IA."
+    },
     {
       "id": "unit-2026-11-08",
       "date": "2026-11-08T19:00:00Z",
@@ -108,6 +156,16 @@
     }
   ],
   "changelog": [
+    {
+      "id": "pr-4",
+      "date": "2026-11-09T00:42:30Z",
+      "text": "PR #4: modo Corrida contra 3 drones de IA com dificuldade configurável (Fácil, Médio, Difícil e Insano), 1 a 3 voltas, colisão entre drones, posição ao vivo, classificação final e resultados salvos por pista e dificuldade."
+    },
+    {
+      "id": "pr-3",
+      "date": "2026-11-08T19:16:28Z",
+      "text": "PR #3: arquivo gamelab.json para a sincronização do Game Lab."
+    },
     {
       "id": "pr-2",
       "date": "2026-11-07T13:06:17Z",
