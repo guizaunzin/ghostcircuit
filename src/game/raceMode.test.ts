@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AiDriver, AI_PROFILES, DIFFICULTIES, type AiProfile, type Difficulty } from './ai';
+import { Autopilot } from './autopilot';
 import { DRONE, NO_INPUT, type DroneInput } from './drone';
 import { getTrack, MAPS } from './maps';
 import { createProgress, updateProgress, type GateCrossing } from './race';
@@ -32,6 +33,32 @@ function race(mapId: string, difficulty: Difficulty, player: AiProfile, laps = 1
     sim.events.length = 0;
   }
   return { sim, events };
+}
+
+/**
+ * A player who holds throttle + boost the whole time and never brakes, on a
+ * clean line without the shortcut (the play style reported as beating the
+ * old Insano by 10 s). Starts last, 2 laps.
+ */
+function boostHolderRace(mapId: string, difficulty: Difficulty) {
+  const track = getTrack(mapId);
+  const sim = new Simulation(track);
+  sim.reset(null, { difficulty, laps: 2, opponents: 3 });
+  const line = new Autopilot(track, { aggression: 1, useBoost: true, useShortcut: false });
+  const input: DroneInput = { throttle: 0, brake: 0, steer: 0, boost: false };
+  let position: number | null = null;
+  for (let i = 0; i < 120 * 150 && sim.phase !== 'finished'; i++) {
+    if (sim.phase === 'racing') {
+      line.drive(sim.drone, input);
+      input.throttle = 1;
+      input.brake = 0;
+      input.boost = true;
+    } else Object.assign(input, NO_INPUT);
+    sim.step(input);
+    for (const e of sim.events) if (e.type === 'finish') position = e.position;
+    sim.events.length = 0;
+  }
+  return position;
 }
 
 describe('multi-lap rules', () => {
@@ -108,6 +135,13 @@ describe('race mode', { timeout: 180000 }, () => {
         expect(fin && fin.type === 'finish' ? fin.position : null, `${m.id} ${diff}`).toBe(1);
         expect(sim.racers[0].finishPosition).toBe(1);
       }
+    }
+  });
+
+  it('holding boost all race beats Médio but loses to Insano on every map', () => {
+    for (const m of MAPS) {
+      expect(boostHolderRace(m.id, 'medio'), `${m.id} médio`).toBe(1);
+      expect(boostHolderRace(m.id, 'insano'), `${m.id} insano`).toBeGreaterThan(1);
     }
   });
 

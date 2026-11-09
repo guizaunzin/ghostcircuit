@@ -56,6 +56,24 @@ export const DRONE = {
   wallFriction: 0.35,
 } as const;
 
+/** Maximum yaw rate (rad/s) at a given forward speed. */
+export function turnRateAt(speed: number): number {
+  const sNorm = clamp(Math.abs(speed) / DRONE.maxSpeed, 0, 1);
+  return DRONE.turnRateLow + (DRONE.turnRateHigh - DRONE.turnRateLow) * sNorm;
+}
+
+/**
+ * Highest speed that can hold a curve of curvature k (1/radius): the drone
+ * keeps its forward speed while yawing, so the limit is the yaw rate
+ * (v * k <= turnRate(v)), scaled by a safety margin (0..1).
+ */
+export function cornerSpeed(k: number, margin: number): number {
+  if (k < 1e-5) return Infinity;
+  let v: number = DRONE.boostMaxSpeed;
+  for (let i = 0; i < 4; i++) v = (turnRateAt(v) * margin) / k;
+  return v;
+}
+
 export function createDrone(x: number, z: number, yaw: number): DroneState {
   return {
     x,
@@ -170,8 +188,7 @@ export function stepDrone(d: DroneState, input: DroneInput, dt: number, track: T
 
   // --- Steering ----------------------------------------------------------
   const sp = Math.abs(vf);
-  const sNorm = clamp(sp / DRONE.maxSpeed, 0, 1);
-  const turnRate = DRONE.turnRateLow + (DRONE.turnRateHigh - DRONE.turnRateLow) * sNorm;
+  const turnRate = turnRateAt(sp);
   // Reversing flips steering like a car would feel natural.
   const dir = vf < -0.5 ? -1 : 1;
   const targetYawRate = -steer * turnRate * dir;

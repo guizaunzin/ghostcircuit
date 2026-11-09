@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "projectId": "fantasma",
   "repository": "guizaunzin/ghostcircuit",
-  "updatedAt": "2026-11-09T00:48:00Z",
+  "updatedAt": "2026-11-09T01:30:00Z",
   "summary": "Corrida de drones em 3D no navegador com dois modos: contra o próprio fantasma (cada corrida completa vira um fantasma para a próxima tentativa) e corrida contra 3 drones de IA com dificuldade configurável (Fácil, Médio, Difícil e Insano) em 1 a 3 voltas. Cinco pistas (Arena Crepúsculo, feita à mão, e quatro geradas por seed com temas próprios), quatro checkpoints em ordem, boost recarregável e um atalho estreito por pista. Tudo roda no cliente (React, TypeScript, Vite e Three.js), sem backend; recordes, fantasmas e resultados contra a IA ficam no localStorage, separados por pista.",
-  "nextTask": "Jogar o modo Corrida vs IA num celular físico e num computador com GPU real, em cada dificuldade, para ajustar o equilíbrio (a dificuldade foi calibrada com pilotos controlados por código) e medir o desempenho com 4 drones. Até agora os testes automatizados só rodaram em Chromium com renderização por software.",
+  "nextTask": "Jogar de novo o Médio e o Insano no computador para confirmar o novo equilíbrio, e o modo Corrida num celular físico para medir o desempenho com 4 drones.",
   "features": [
     {
       "id": "checkpoints",
@@ -68,9 +68,9 @@
     },
     {
       "id": "ai-difficulty",
-      "text": "Dificuldade configurável dos rivais (Fácil, Médio, Difícil e Insano). Eles usam a mesma física do jogador; a dificuldade muda velocidade alvo, agressividade nas curvas, uso de boost e do atalho e precisão da linha.",
+      "text": "Dificuldade configurável dos rivais (Fácil, Médio, Difícil e Insano). Eles usam a mesma física do jogador e freiam pelo limite real de giro do drone; a dificuldade muda teto de velocidade, margem nas curvas, uso de boost e do atalho e precisão da linha.",
       "status": "validated",
-      "evidence": "src/game/raceMode.test.ts: em todas as 5 pistas os rivais ficam mais rápidos a cada nível, um piloto forte vence Fácil e Médio largando em último e um piloto fraco perde no Insano. npm test passou em 09/11/2026 (77/77)."
+      "evidence": "src/game/raceMode.test.ts: os rivais ficam mais rápidos a cada nível em todas as pistas; quem segura acelerador e boost sem frear vence o Médio e perde para o Insano em todas as pistas; piloto forte vence Fácil e Médio largando em último. npm test passou em 09/11/2026 (78/78)."
     },
     {
       "id": "race-records",
@@ -114,9 +114,19 @@
       "id": "sdf-grid",
       "date": "2026-11-09T00:36:00Z",
       "text": "A distância até as paredes usa uma grade espacial por corredor, com resultado idêntico à busca completa, para manter leve a simulação de 4 drones a 120 Hz."
+    },
+    {
+      "id": "ai-yaw-limited-braking",
+      "date": "2026-11-09T01:30:00Z",
+      "text": "A IA freia pelo limite real do drone (velocidade de giro, já que ele mantém a velocidade enquanto gira), e não por um limite de aderência lateral. Ela também usa o boost a cada recarga. A calibragem tem como referência quem segura acelerador e boost a corrida toda: esse estilo deve vencer o Médio e perder para o Insano."
     }
   ],
   "bugs": [
+    {
+      "id": "ai-too-easy",
+      "date": "2026-11-09T01:30:00Z",
+      "text": "Corrigido: Médio e Insano fáceis demais. Num computador, segurando o boost a corrida toda, dava para abrir 10 s no Insano em 2 voltas. A IA freava demais e quase não usava o boost; os rivais do Insano ficaram 3–5 s por volta mais rápidos e os do Médio ~4 s."
+    },
     {
       "id": "pillars-in-walls",
       "date": "2026-11-07T12:41:44Z",
@@ -139,6 +149,11 @@
     }
   ],
   "tests": [
+    {
+      "id": "unit-2026-11-09b",
+      "date": "2026-11-09T01:20:00Z",
+      "text": "npm test (Vitest): 6 arquivos, 78 testes passando, incluindo o novo teste do jogador que segura o boost (vence o Médio e perde para o Insano em todas as pistas). npm run test:e2e: 55 verificações passando, sem erros no console."
+    },
     {
       "id": "e2e-2026-11-09",
       "date": "2026-11-09T00:47:47Z",

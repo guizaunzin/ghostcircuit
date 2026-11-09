@@ -27,9 +27,9 @@ export const DIFFICULTIES: Difficulty[] = ['facil', 'medio', 'dificil', 'insano'
 
 export const AI_PROFILES: Record<Difficulty, AiProfile> = {
   facil: { label: 'Fácil', aggression: 0.12, speedCap: 24, shortcutChance: 0, wobble: 2.2, spread: 0.06 },
-  medio: { label: 'Médio', aggression: 0.26, speedCap: 26.5, shortcutChance: 0.15, wobble: 1.3, spread: 0.05 },
-  dificil: { label: 'Difícil', aggression: 0.6, speedCap: DRONE.maxSpeed, shortcutChance: 0.45, wobble: 0.6, spread: 0.04 },
-  insano: { label: 'Insano', aggression: 0.9, speedCap: DRONE.boostMaxSpeed, shortcutChance: 0.8, wobble: 0.2, spread: 0.025 },
+  medio: { label: 'Médio', aggression: 0.4, speedCap: 29, shortcutChance: 0.25, wobble: 1, spread: 0.04 },
+  dificil: { label: 'Difícil', aggression: 0.62, speedCap: 38, shortcutChance: 0.5, wobble: 0.7, spread: 0.03 },
+  insano: { label: 'Insano', aggression: 1, speedCap: DRONE.boostMaxSpeed, shortcutChance: 1, wobble: 0, spread: 0.01 },
 };
 
 export const RIVALS = [
@@ -84,7 +84,9 @@ export class AiDriver {
 
   /** Picks the line for the next lap (main or shortcut). */
   chooseRoute(): void {
-    this.current = this.rand() < this.profile.shortcutChance ? this.short : this.main;
+    // Fewer rivals squeeze into the narrow lane at once (no conga line).
+    const chance = this.profile.shortcutChance * (1 - 0.3 * this.index);
+    this.current = this.rand() < chance ? this.short : this.main;
   }
 
   resync(d: DroneState): void {
