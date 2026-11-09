@@ -2,7 +2,7 @@
 // tests (headless laps, E2E) to prove the track is completable; not exposed
 // to players.
 
-import { DRONE, forwardSpeed, type DroneInput, type DroneState } from './drone';
+import { cornerSpeed, DRONE, forwardSpeed, type DroneInput, type DroneState } from './drone';
 import { clamp, wrapAngle, type Vec2 } from './math';
 import type { Track } from './track';
 
@@ -71,11 +71,17 @@ export class Autopilot {
       const k = this.curvatureAt(s);
       if (k > maxCurv) maxCurv = k;
     }
-    const latMax = 15 + this.opts.aggression * 30;
-    const vTarget = Math.min(speedCap, maxCurv > 1e-4 ? Math.sqrt(latMax / maxCurv) : DRONE.boostMaxSpeed);
+    // The drone keeps its speed while yawing: the real limit in a curve is
+    // the yaw rate. Aggression sets how close to that limit the pilot goes.
+    // Above 1 is still safe: the pursuit line cuts corners, so the radius
+    // actually driven is larger than the route's.
+    const margin = 0.4 + 0.8 * clamp(this.opts.aggression, 0, 1.3);
+    const vTarget = Math.min(speedCap, cornerSpeed(maxCurv, margin), DRONE.boostMaxSpeed);
     out.throttle = speed < vTarget ? 1 : 0;
     out.brake = speed > vTarget + 2 ? clamp((speed - vTarget) / 6, 0.2, 1) : 0;
-    out.boost = this.opts.useBoost && speedCap > DRONE.maxSpeed && maxCurv < 0.006 && Math.abs(err) < 0.15 && d.boost > 0.05;
+    // Boost whenever the line ahead allows going faster than the normal cap.
+    // (Like a player holding the button: every recharge gets used.)
+    out.boost = this.opts.useBoost && out.throttle > 0 && vTarget > DRONE.maxSpeed + 1;
     void n;
     return out;
   }
@@ -95,8 +101,9 @@ export class Autopilot {
 
   private curvatureAt(dist: number): number {
     const a = this.pointAhead(dist);
-    const b = this.pointAhead(dist + 4);
-    const c = this.pointAhead(dist + 8);
+    // Long chords: the pursuit line rounds off short wiggles of the route.
+    const b = this.pointAhead(dist + 8);
+    const c = this.pointAhead(dist + 16);
     const abx = b.x - a.x;
     const abz = b.z - a.z;
     const bcx = c.x - b.x;

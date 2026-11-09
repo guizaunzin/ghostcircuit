@@ -17,12 +17,18 @@ Corrida de drones no navegador contra o seu próprio fantasma. Uma pista, quatro
   - O HUD mostra posição, volta e avisos de ultrapassagem. A tela final mostra a classificação.
   - Cada pista guarda, por dificuldade e número de voltas, a melhor posição, o melhor tempo e as vitórias. Corridas abandonadas não contam, e corridas contra a IA não geram fantasmas.
 
-| Dificuldade | Rivais (tempo de volta típico) |
+| Dificuldade | Rival mais rápido (por volta) |
 | --- | --- |
-| Fácil | ~40–47 s, sem boost nem atalho, linha imprecisa |
-| Médio | ~37–41 s, atalho às vezes |
-| Difícil | ~31–35 s, velocidade máxima, atalho com frequência |
-| Insano | ~29–34 s, boost nas retas, quase sempre pelo atalho |
+| Fácil | ~39–43 s, sem boost nem atalho, linha imprecisa |
+| Médio | ~32–35 s, sem boost, atalho às vezes |
+| Difícil | ~26–30 s, boost limitado, atalho com frequência |
+| Insano | ~24–28 s, boost em toda recarga, sempre pelo atalho, curvas no limite da física |
+
+A IA freia de acordo com o limite real do drone: ele mantém a velocidade enquanto gira, então o que limita uma curva é a velocidade de giro, não a aderência. A calibragem usa como referência quem segura acelerador e boost a corrida toda sem frear (testes em `src/game/raceMode.test.ts`):
+- esse estilo vence o Médio e perde para o Insano em todas as pistas, mesmo com linha perfeita e atalho;
+- um piloto no nível da melhor IA vence o Difícil na maioria das pistas e fica 1–2 s atrás no Insano em 2 voltas.
+
+O Insano é para quem pilota melhor que a IA.
 
 ## Pistas
 
